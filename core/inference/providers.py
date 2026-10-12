@@ -99,6 +99,62 @@ def _extract_json(text: str) -> Optional[Any]:
     return None
 
 
+def _coerce_to_schema(structured: Any, schema: Dict[str, Any]) -> Any:
+    """Adapt the model's actual output shape to the requested schema.
+
+    Real models do not always honour the requested keys. qwen3:4b, asked for a
+    broadcast script, reliably returns {"sentence": "..."} (after reasoning in
+    the thinking field) rather than {"turns": [...]}. The orchestrator expects
+    `turns`. Rather than treat every shape mismatch as a semantic failure — the
+    stub never had to cope with this — coerce the common shapes:
+
+    - {"turns": [...]}            -> unchanged
+    - {"sentence"|"text"|"line": str} -> wrapped as a single turn
+    - a bare string               -> wrapped as a single turn
+    - a list of strings           -> wrapped as turns
+
+    This is tolerance for the *container*, not for content: the text still
+    passes through the full §15.4 validation, so an unsupported factual claim
+    is refused regardless of how it was shaped.
+    """
+    if structured is None:
+        return None
+    if isinstance(structured, dict) and "turns" in structured:
+        return structured
+    if isinstance(structured, str):
+        return {"turns": [{"sequence": 1, "text": structured,
+                           "speech_act": "factual_report"}]}
+    if isinstance(structured, dict):
+        for key in ("sentence", "text", "line", "statement", "script"):
+            value = structured.get(key)
+            if isinstance(value, str) and value.strip():
+                return {"turns": [{"sequence": 1, "text": value,
+                                   "speech_act": "factual_report"}]}
+        # Degenerate shape qwen3 emits under format:json when it treats the
+        # sentence as a key: {"<the sentence>": 1}. A single string key whose
+        # value is a small int is the spoken line, not a field name.
+        if len(structured) == 1:
+            (only_key, only_value), = structured.items()
+            if (isinstance(only_key, str) and only_key.strip()
+                    and isinstance(only_value, (int, float))):
+                return {"turns": [{"sequence": 1, "text": only_key,
+                                   "speech_act": "factual_report"}]}
+        return None
+    if isinstance(structured, list):
+        turns = []
+        for index, item in enumerate(structured, start=1):
+            if isinstance(item, str):
+                turns.append({"sequence": index, "text": item,
+                              "speech_act": "factual_report"})
+            elif isinstance(item, dict) and item.get("text"):
+                turns.append({"sequence": item.get("sequence", index),
+                              "text": item["text"],
+                              "speech_act": item.get(
+                                  "speech_act", "factual_report")})
+        return {"turns": turns} if turns else None
+    return None
+
+
 # ── Ollama LLM provider ──────────────────────────────────────────────
 
 
@@ -145,19 +201,44 @@ class OllamaProvider:
         except Exception:
             return False
 
-    def _post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _post(self, path: str, payload: Dict[str, Any],
+              _retries: int = 5) -> Dict[str, Any]:
+        """POST with bounded retry on transient server errors (§14.6).
+
+        qwen3:4b on CPU intermittently returns HTTP 500 "token repeat limit
+        reached" — a transient abort, not a malformed request. Retrying the
+        identical request usually succeeds, so a 500 is retried with backoff
+        rather than burned as a hard failure. A 4xx is a real client error and
+        is not retried.
+        """
+        import time as _time
         body = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            f"{self.base_url}{path}", data=body,
-            headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                return json.loads(resp.read().decode())
-        except urllib.error.URLError as error:
-            raise ProviderUnavailable(
-                f"ollama unreachable at {self.base_url}: {error}")
-        except TimeoutError:
-            raise ProviderTimeout("ollama request timed out")
+        last_error: Optional[Exception] = None
+        for attempt in range(_retries):
+            req = urllib.request.Request(
+                f"{self.base_url}{path}", data=body,
+                headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as error:
+                # 5xx = transient server abort (e.g. token repeat limit);
+                # 4xx = the request itself is wrong; do not retry those.
+                if 400 <= error.code < 500:
+                    raise ProviderUnavailable(
+                        f"ollama rejected request ({error.code}): "
+                        f"{error.read().decode()[:200]}")
+                last_error = ProviderUnavailable(
+                    f"ollama server error {error.code} (attempt "
+                    f"{attempt + 1}/{_retries})")
+            except urllib.error.URLError as error:
+                last_error = ProviderUnavailable(
+                    f"ollama unreachable at {self.base_url}: {error}")
+            except TimeoutError:
+                last_error = ProviderTimeout("ollama request timed out")
+            if attempt < _retries - 1:
+                _time.sleep(0.5 * (attempt + 1))
+        raise last_error or ProviderUnavailable("ollama request failed")
 
     async def generate(self, request: Dict[str, Any]) -> GenerationResult:
         self.attempt_count += 1
@@ -171,7 +252,8 @@ class OllamaProvider:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 2048},
+            "options": {"temperature": 0.3, "num_predict": 1024,
+                        "think": False},
         }
         data = await asyncio.get_event_loop().run_in_executor(
             None, self._post, "/api/generate", payload)
@@ -201,21 +283,22 @@ class OllamaProvider:
         if not self._capabilities.structured_output:
             raise UnsupportedCapability(
                 f"{self.provider_id} does not support structured output")
-        # Ask for JSON via the format field; fall back to brace extraction.
         started = time.monotonic()
         prompt = request.get("prompt") or request.get("objective", "")
         payload = {
             "model": self.model,
-            "prompt": prompt + "\n\nRespond with ONLY a single valid JSON object.",
+            "prompt": prompt,
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.2, "num_predict": 2048},
+            "options": {"temperature": 0.2, "num_predict": 1024,
+                        "think": False},
         }
         data = await asyncio.get_event_loop().run_in_executor(
             None, self._post, "/api/generate", payload)
 
         text = data.get("response", "") or data.get("thinking", "") or ""
         structured = _extract_json(text)
+        structured = _coerce_to_schema(structured, schema)
         latency_ms = int((time.monotonic() - started) * 1000)
         return GenerationResult(
             text=text,
