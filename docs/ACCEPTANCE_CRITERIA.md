@@ -145,6 +145,42 @@ archive entry; original marked `superseded_by`, never deleted.
 
 ---
 
+## Gate 9 evidence (recorded 2026-10-12)
+
+Command: `python3 -m pytest -q`
+Result: **712 passed, 0 failed** (Phase 5 was 633; Phase 6 added 79)
+
+| File | Tests | Covers |
+|---|---|---|
+| test_personas.py | 79 | §12 persona architecture, dialogue, memory, consistency |
+
+### Gate 9 — multi-persona coherent dialogue
+
+| Criterion | Result |
+|---|---|
+| Multiple personas, distinct configured roles | MET — versioned configs |
+| Initial analyses generated independently | MET — ordering enforced, not prompt-based |
+| Each analysis records assumptions and evidence | MET — `PersonaAnalysis` fields |
+| Disagreement identifies the precise proposition | MET — question or common words |
+| Disagreement records shared facts | MET — both parties' accepted facts |
+| No manufactured disagreement on clear evidence | MET — unanimous analyses suppressed |
+| No forced consensus when unresolved | MET — `must_not_force_consensus` |
+| Structured exchange addresses recorded disagreements | MET — turns trace to disagreement ids |
+| Script validates against the shared packet | MET — `evidence_packet_id` set |
+| Memory persistent, bounded, typed, provenance-carrying | MET — 5 types, active cap |
+| Persona recalls a prior position and its weakening | MET — history retains withdrawn |
+| Consistency distinguishes explainable change from drift | MET — 1.0 explained / 0.3 drift |
+| Personality does not determine truth | MET — shared packet is the baseline |
+| Unintentional imitation detectable | MET — correlated-error finding |
+
+### §12.7 explainable-change distinction, tested directly
+
+A position revision with a recorded CORRECTION entry scores `appropriate_revision`
+1.0. The same revision with no recorded basis scores 0.3. Change is not
+penalized; unexplained change is.
+
+---
+
 ## Gate 3 evidence (recorded 2026-10-12)
 
 Command: `python3 -m pytest -q`

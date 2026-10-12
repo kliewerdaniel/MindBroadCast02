@@ -257,6 +257,16 @@ structured disagreement records, multi-voice broadcasting.
 **Exit criterion:** Multiple personas can participate coherently while sharing a
 common evidence model and preserving distinct analytical roles.
 
+**Status: COMPLETE — Gate 9 MET.** 79 persona tests; all exit criteria
+verified. Delivered: `core/personas/` with versioned persona configurations
+(§12.2), independent first-pass analysis enforced by ordering (§12.4), the
+disagreement model with the no-manufacture and no-forced-consensus refusals
+(§12.5), bounded typed persona memory with cross-type revision withdrawal
+(§12.6), the six-dimension consistency evaluation distinguishing explainable
+change from drift (§12.7), and imitation detection for correlated errors
+(§14.7).
+Plan: `docs/PHASE_6_PLAN.md`. Decisions: `docs/DECISIONS_PHASE6.md`.
+
 ---
 
 ## Phase 7: Live audience and operator experience

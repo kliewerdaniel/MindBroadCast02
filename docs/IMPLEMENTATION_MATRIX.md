@@ -148,6 +148,19 @@ only).
 | Interrupt-safe audio (§13.5) | STATE_MACHINES.md §Interruption | 5 | **IMPLEMENTED** — abandoned audio dropped |
 | Director state + crash recovery (§13.2) | STATE_MACHINES.md §Director | 5 | **IMPLEMENTED** — PLAYING recovers as INTERRUPTED |
 | Post-broadcast correction (§15.7) | EDITORIAL_MODEL.md §Correction | 5 | **IMPLEMENTED** — append-only transcript archive |
+
+## Personas (§12)
+
+| Feature | Reference | Phase | Status |
+|---|---|---|---|
+| Versioned persona configuration | DOMAIN_MODEL.md §Persona | 6 | **IMPLEMENTED** — update creates a version (ADR-037) |
+| Persona memory (5 types, bounded) | DOMAIN_MODEL.md §Persona memory | 6 | **IMPLEMENTED** — typed, provenance, capped (ADR-040) |
+| Independent first-pass analysis | EDITORIAL_MODEL.md §Independent analysis | 6 | **IMPLEMENTED** — ordering-enforced (ADR-038) |
+| Disagreement model | EDITORIAL_MODEL.md §Disagreement | 6 | **IMPLEMENTED** — precise proposition, 7 types |
+| Structured exchange composition | EDITORIAL_MODEL.md §Dialogue | 6 | **IMPLEMENTED** — built from disagreement records |
+| Persona consistency evaluation | EDITORIAL_MODEL.md §Consistency | 6 | **IMPLEMENTED** — explainable change ≠ drift (ADR-039) |
+| Cross-type memory revision withdrawal | DOMAIN_MODEL.md §Persona memory | 6 | **IMPLEMENTED** — spans buckets (ADR-041) |
+| Imitation / correlated-error detection | TESTING_STRATEGY.md §Layer 12 | 6 | **IMPLEMENTED** — surfaces §14.7 symptom |
 | Fairness / bias monitoring | EDITORIAL_MODEL.md §Fairness | 4, 8 | MISSING |
 
 ## §11 Editorial control plane
@@ -286,9 +299,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gates 1–7 closed; 65 domain/infrastructure items |
+| IMPLEMENTED | Gates 1–7, 9 closed; 73 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~38 spec features across 10 subsystems (Phases 6–9) |
+| MISSING | ~31 spec features across 10 subsystems (Phases 7–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 

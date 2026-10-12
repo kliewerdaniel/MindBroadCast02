@@ -43,6 +43,8 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 | 20 | [PHASE_4_PLAN.md](PHASE_4_PLAN.md) | World model and story intelligence plan. **Executed.** |
 | 21 | [DECISIONS_PHASE5.md](DECISIONS_PHASE5.md) | ADRs 31–36: decisions taken during Phase 5 implementation. |
 | 22 | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) | Single-persona broadcasting plan. **Executed.** |
+| 23 | [DECISIONS_PHASE6.md](DECISIONS_PHASE6.md) | ADRs 37–42: decisions taken during Phase 6 implementation. |
+| 24 | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | Multi-persona dialogue plan. **Executed.** |
 | 17 | [PHASE_2_PLAN.md](PHASE_2_PLAN.md) | Ingestion and source normalization plan. **Executed.** |
 | 14 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
 | 15 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
@@ -54,5 +56,5 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 - `MISSING` — not built.
 - `DEFERRED` — intentionally out of scope for early phases.
 
-**Current status: Phases 0–5 complete — Gates 1–7 MET, 633 tests passing**
+**Current status: Phases 0–6 complete — Gates 1–7, 9 MET, 712 tests passing**
 (baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gates 4 and 5 evidence".
