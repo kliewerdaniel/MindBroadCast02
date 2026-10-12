@@ -94,16 +94,23 @@ async def main():
     results.append(log("compile: deterministic passes", compiled.ok,
                        f"{len(compiled.claims.claims)} claims extracted"))
 
-    # 3. REAL model generation (no stub).
+    # 3. REAL model generation (no stub). The article text is untrusted
+    #    source data (§14.5): it is wrapped in data delimiters so the model
+    #    receives it as data, not as instructions.
     t0 = time.monotonic()
     objective = ("Write one factual broadcast sentence reporting the "
                  "unemployment figure from the article. One sentence only.")
-    gen = await provider.generate({"objective": objective, "prompt": objective})
+    guarded_prompt = (
+        "<<<SOURCE_DATA>>>\n" + ARTICLE_TEXT +
+        "\n<<<END_SOURCE_DATA>>>\n\n" + objective +
+        "\nUse only the source data above. One sentence.")
+    gen = await provider.generate({"objective": objective,
+                                   "prompt": guarded_prompt})
     latency = int((time.monotonic() - t0) * 1000)
     results.append(log("generate: real model returned text", bool(gen.text),
                        f"{latency}ms, model={gen.model_id}"))
     if gen.text:
-        print(f"       model said: {gen.text.strip()[:120]!r}")
+        print(f"       model said: {gen.text.strip()[:140]!r}")
 
     # 4. REAL structured generation.
     t0 = time.monotonic()
@@ -152,14 +159,18 @@ async def main():
                        not report.is_approved,
                        f"outcome={report.outcome.value}"))
 
-    # 7. Director + audio buffer against the real (silent) TTS.
+    # 7. Director + audio buffer against the real (silent) TTS. Drive the
+    #    full legal §13.3 lifecycle — the state machine refuses shortcuts.
     director = BroadcastDirector()
     segment = Segment(id="live-seg", status=SegmentStatus.PLANNED,
                       media_generation_id="gen-live", persona_id="presenter")
     director.add_segment(segment)
-    for status in (SegmentStatus.APPROVED, SegmentStatus.SYNTHESIZING,
-                   SegmentStatus.READY):
+    for status in (SegmentStatus.GENERATING, SegmentStatus.GENERATED,
+                   SegmentStatus.VALIDATING, SegmentStatus.APPROVED,
+                   SegmentStatus.SYNTHESIZING, SegmentStatus.READY,
+                   SegmentStatus.QUEUED):
         director.advance("live-seg", status)
+    director.queue.append("live-seg")
     synth = await tts.synthesize(_synth_req("live-seg", "gen-live",
                                             "Unemployment was 6.1% in March."))
     director.attach_audio("live-seg", AudioChunk(
