@@ -2,8 +2,8 @@
 
 A persistent, autonomous, news-driven intelligence and broadcasting system.
 
-**Status:** Phases 0–6 complete. **Gates 1–7, 9 MET.**
-Baseline was 49 passed / 27 failed; now **712 passed / 0 failed**.
+**Status:** Phases 0–7 complete. **Gates 1–9 MET.**
+Baseline was 49 passed / 27 failed; now **802 passed / 0 failed**.
 
 ## What this is
 
@@ -98,7 +98,8 @@ MindBroadCast02/
     ├── test_compiler.py        71
     ├── test_world_model.py     54
     ├── test_broadcast.py       151
-    └── test_personas.py         79
+    ├── test_personas.py         79
+    └── test_audience_api.py     90
 ```
 
 Run the suite: `python3 -m pytest -q`

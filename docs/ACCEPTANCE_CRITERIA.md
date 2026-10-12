@@ -181,6 +181,39 @@ penalized; unexplained change is.
 
 ---
 
+## Gate 8 evidence (recorded 2026-10-12)
+
+Command: `python3 -m pytest -q`
+Result: **802 passed, 0 failed** (Phase 6 was 712; Phase 7 added 90)
+
+| File | Tests | Covers |
+|---|---|---|
+| test_audience_api.py | 90 | §17 audience, §18 UI/operator, §19 API/events |
+
+### Gate 8 — operator observability and control
+
+| Criterion | Result |
+|---|---|
+| Every §19.2 endpoint implemented, domain operations not raw tables | MET — 20 endpoints, own response types |
+| Versioned; structured errors; no silent client breakage | MET — `api_version`, code/message/id/retryable |
+| No raw DB access or unrestricted admin to unauthenticated client | MET — admin endpoints 401 |
+| Listener message is a durable input event, non-blocking | MET — enqueues, emits event |
+| A question is not automatically answered on air | MET — `response_segment_id` stays None |
+| A listener cannot directly establish a claim | MET — no claims write path exists |
+| Per-client rate limits and queue quotas bound influence | MET |
+| Abuse classification catches spam, duplicates, coordination | MET — stem-matched markers |
+| Feedback recorded as noisy, never truth/consensus | MET — confidence capped 0.5, `noisy=True` |
+| SSE stream stable ids, replay, persisted | MET — replay after cursor, retention bound |
+| SHOW ANALYSIS exposes all ten fields | MET — 10/10 |
+| SHOW ANALYSIS presents no chain-of-thought | MET — no field + redaction |
+| Transcript distinguishes generated from delivered | MET — unplayed yields empty public transcript |
+| Interrupted/abandoned segment marked, not completed | MET |
+| Operator controls cover §18.6; persistent actions confirmed + audited | MET |
+| Dashboard answers the four §18.1 questions | MET — 4/4 |
+| Status not communicated by color alone | MET — textual state enforced |
+
+---
+
 ## Gate 3 evidence (recorded 2026-10-12)
 
 Command: `python3 -m pytest -q`

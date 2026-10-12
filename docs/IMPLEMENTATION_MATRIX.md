@@ -161,6 +161,23 @@ only).
 | Persona consistency evaluation | EDITORIAL_MODEL.md §Consistency | 6 | **IMPLEMENTED** — explainable change ≠ drift (ADR-039) |
 | Cross-type memory revision withdrawal | DOMAIN_MODEL.md §Persona memory | 6 | **IMPLEMENTED** — spans buckets (ADR-041) |
 | Imitation / correlated-error detection | TESTING_STRATEGY.md §Layer 12 | 6 | **IMPLEMENTED** — surfaces §14.7 symptom |
+
+## Audience and API (§17–§19)
+
+| Feature | Reference | Phase | Status |
+|---|---|---|---|
+| Listener message pipeline | ARCHITECTURE.md §Listener channel | 7 | **IMPLEMENTED** — durable, non-blocking (§17.1) |
+| Listener cannot establish claims | ARCHITECTURE.md §Listener isolation | 7 | **IMPLEMENTED** — no write path (ADR-044) |
+| Rate limits and queue quotas | ARCHITECTURE.md §Abuse protection | 7 | **IMPLEMENTED** — per-client, topic-influence bounded |
+| Abuse classification | ARCHITECTURE.md §Abuse protection | 7 | **IMPLEMENTED** — stem-matched markers (ADR-048) |
+| Feedback signals (noisy) | ARCHITECTURE.md §Feedback | 7 | **IMPLEMENTED** — confidence-capped (ADR-049) |
+| API layer (domain operations) | ARCHITECTURE.md §API | 7 | **IMPLEMENTED** — own response types (ADR-043) |
+| Structured errors | ARCHITECTURE.md §Errors | 7 | **IMPLEMENTED** — code/message/id/retryable |
+| SSE event stream (persisted, replayable) | ARCHITECTURE.md §Events | 7 | **IMPLEMENTED** — stable ids, cursor replay |
+| SHOW ANALYSIS audit surface | ARCHITECTURE.md §Show analysis | 7 | **IMPLEMENTED** — 10 fields, no chain-of-thought |
+| Live transcript (generated ≠ delivered) | ARCHITECTURE.md §Transcript | 7 | **IMPLEMENTED** — delivery-time entries (ADR-046) |
+| Operator controls (confirm + audit) | ARCHITECTURE.md §Operator | 7 | **IMPLEMENTED** — risk-classified (ADR-047) |
+| Accessibility data contract | ARCHITECTURE.md §Accessibility | 7 | **IMPLEMENTED** — status not color-only |
 | Fairness / bias monitoring | EDITORIAL_MODEL.md §Fairness | 4, 8 | MISSING |
 
 ## §11 Editorial control plane
@@ -299,9 +316,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gates 1–7, 9 closed; 73 domain/infrastructure items |
+| IMPLEMENTED | Gates 1–9 closed; 85 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~31 spec features across 10 subsystems (Phases 7–9) |
+| MISSING | ~24 spec features across 10 subsystems (Phases 8–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 
