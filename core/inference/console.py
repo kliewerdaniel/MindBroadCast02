@@ -1,0 +1,215 @@
+"""The MindBroadcast listener console.
+
+A minimal web player over the live runtime: open localhost in a browser to hear
+the broadcast and watch the transcript arrive. FastAPI + vanilla JS, SSE for the
+transcript, per-segment audio served for playback — the dependency-light pattern
+from the pipeline-web-ui discipline.
+
+    uvicorn core.inference.console:app --port 7862
+
+The console owns a LiveRuntime (reusing the proven real LLM + TTS-server path),
+retains each segment's audio to disk so the browser can fetch and play it in
+order, and streams transcript lines over SSE as they air.
+
+Design boundaries preserved:
+- §13.4: generated ≠ delivered. Only segments that completed playback appear in
+  the public transcript; the audio endpoint serves what was actually synthesized.
+- §16.8: audio (HTTP file) and metadata (SSE) are separate channels.
+- Fail-closed: if the LLM or TTS is down, /health says so and the run reports it
+  rather than fabricating.
+"""
+
+import asyncio
+import json
+import os
+import struct
+import threading
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+
+from ..broadcast.providers import ProviderError
+from ..inference.providers import OllamaProvider
+from ..inference.qwen3_tts_http import Qwen3TTSHttpProvider
+from ..inference.runtime import LiveRuntime, RuntimeConfig, TranscriptLine
+
+_HERE = Path(__file__).resolve().parent
+_STATIC = _HERE / "console_static"
+_SEGMENTS_DIR = _HERE.parent.parent / "data" / "segments"
+
+# The asyncio event-loop gotcha: capture the REAL running loop on first SSE
+# connection; broadcast into the subscriber queues with call_soon_threadsafe.
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+_subscribers: List["asyncio.Queue"] = []
+_run_lock = threading.Lock()
+_run_active = False
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _broadcast(event: Dict[str, Any]) -> None:
+    """Thread-safe push to every SSE subscriber."""
+    if _main_loop is None:
+        return
+
+    def _put(queue: "asyncio.Queue") -> None:
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            pass
+
+    for queue in list(_subscribers):
+        _main_loop.call_soon_threadsafe(_put, queue)
+
+
+def _write_wav(path: Path, pcm: bytes, sample_rate: int) -> None:
+    data = pcm
+    header = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVE"
+    header += b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, sample_rate,
+                                    sample_rate * 2, 2, 16)
+    header += b"data" + struct.pack("<I", len(data))
+    path.write_bytes(header + data)
+
+
+class ConsoleState:
+    """Holds the runtime and the ordered list of aired segments."""
+
+    def __init__(self) -> None:
+        self.llm = OllamaProvider(model=os.environ.get("MBS_MODEL", "qwen3:4b"))
+        self.tts = Qwen3TTSHttpProvider()
+        self.runtime = LiveRuntime(self.llm, self.tts,
+                                   config=RuntimeConfig(max_segments=0))
+        self.segments: List[Dict[str, Any]] = []   # ordered, playable
+        _SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def on_segment(self, line: TranscriptLine) -> None:
+        """Called by the runtime as each segment airs.
+
+        Persist the segment's audio to disk (for browser playback) and record
+        its transcript entry, then push both to SSE subscribers.
+        """
+        segment = self.runtime.director.segments.get(line.segment_id)
+        audio_url = None
+        duration_ms = line.duration_ms
+        if segment is not None:
+            chunks = self.runtime.director.deliverable_chunks(line.segment_id)
+            pcm = b"".join(c.data for c in chunks)
+            if pcm:
+                wav_path = _SEGMENTS_DIR / f"{line.segment_id}.wav"
+                _write_wav(wav_path, pcm, 24000)
+                audio_url = f"/api/segments/{line.segment_id}/audio"
+        entry = {
+            "segment_id": line.segment_id,
+            "speaker": line.speaker,
+            "text": line.text,
+            "duration_ms": duration_ms,
+            "audio_url": audio_url,
+            "at": line.at.isoformat(),
+        }
+        self.segments.append(entry)
+        _broadcast({"type": "segment", **entry})
+
+    async def health(self) -> Dict[str, Any]:
+        return {
+            "llm": await self.llm.health_check(),
+            "tts": await self.tts.health_check(),
+        }
+
+
+state = ConsoleState()
+
+app = FastAPI(title="MindBroadcast Console")
+
+
+@app.get("/api/health")
+async def health() -> Dict[str, Any]:
+    status = await state.health()
+    return {"ok": all(status.values()), "services": status}
+
+
+@app.get("/api/segments")
+async def segments() -> Dict[str, Any]:
+    return {"segments": state.segments}
+
+
+@app.get("/api/segments/{segment_id}/audio")
+async def segment_audio(segment_id: str) -> FileResponse:
+    wav = _SEGMENTS_DIR / f"{segment_id}.wav"
+    if not wav.exists():
+        raise HTTPException(404, "segment audio not found")
+    return FileResponse(wav, media_type="audio/wav", filename=wav.name)
+
+
+@app.get("/api/stream")
+async def stream() -> StreamingResponse:
+    """SSE: transcript + segment events as the broadcast airs."""
+    global _main_loop
+    if _main_loop is None:
+        _main_loop = asyncio.get_running_loop()
+    queue: "asyncio.Queue" = asyncio.Queue(maxsize=256)
+    _subscribers.append(queue)
+
+    async def event_source():
+        try:
+            # Replay what has already aired so a late joiner sees the history.
+            for entry in state.segments:
+                yield f"data: {json.dumps({'type': 'segment', **entry})}\n\n"
+            while True:
+                event = await queue.get()
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            if queue in _subscribers:
+                _subscribers.remove(queue)
+
+    return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+@app.post("/api/broadcast")
+async def broadcast(topics: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Start a broadcast run over the given topics (one at a time)."""
+    global _run_active
+    if not _run_lock.acquire(blocking=False):
+        raise HTTPException(409, "a broadcast is already running")
+
+    health = await state.health()
+    if not all(health.values()):
+        _run_lock.release()
+        raise HTTPException(503, f"providers unavailable: {health}")
+
+    def run_sync() -> None:
+        global _run_active
+        _run_active = True
+        try:
+            loop = asyncio.new_event_loop()
+            lines = loop.run_until_complete(
+                state.runtime.run(topics, on_segment=state.on_segment))
+            loop.close()
+            _broadcast({"type": "done", "segments": len(lines),
+                        "errors": state.runtime.errors})
+        except Exception as error:               # noqa: BLE001
+            _broadcast({"type": "error", "message": str(error)})
+        finally:
+            _run_active = False
+            _run_lock.release()
+
+    threading.Thread(target=run_sync, daemon=True).start()
+    return {"accepted": True, "topics": len(topics)}
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> HTMLResponse:
+    index_path = _STATIC / "index.html"
+    if index_path.exists():
+        return HTMLResponse(index_path.read_text())
+    return HTMLResponse("<h1>MindBroadcast</h1><p>static/index.html missing</p>")
+
+
+if _STATIC.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")

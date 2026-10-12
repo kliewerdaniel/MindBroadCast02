@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MindBroadcast</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <h1>MINDBROADCAST</h1>
+  <div class="status">
+    <span id="health-dot" class="dot unknown"></span>
+    <span id="health-text">checking…</span>
+  </div>
+</header>
+
+<main>
+  <section class="player-panel">
+    <div class="now-playing">
+      <div class="label">NOW PLAYING</div>
+      <div id="current-text" class="current-text">—</div>
+      <div id="current-meta" class="meta"></div>
+    </div>
+    <audio id="player" controls></audio>
+    <div class="controls">
+      <button id="demo-btn">Broadcast a demo bulletin</button>
+      <span id="run-state" class="run-state"></span>
+    </div>
+  </section>
+
+  <section class="transcript-panel">
+    <div class="label">LIVE TRANSCRIPT</div>
+    <ol id="transcript" class="transcript"></ol>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
