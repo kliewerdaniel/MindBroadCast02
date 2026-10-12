@@ -1,0 +1,13 @@
+# Synthesized audio and live-run artifacts (regenerable via scripts/live_e2e.py)
+data/*.wav
+data/*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# TTS/LLM model weights are NOT committed — they live in the HF/Ollama cache
+# and are fetched once, never at runtime.
+*.onnx
+*.bin

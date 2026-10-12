@@ -33,6 +33,7 @@ from core.broadcast.validation import ScriptValidator
 from core.inference.providers import (
     OllamaEmbeddingProvider, OllamaProvider, SilenceTTSProvider,
 )
+from core.inference.qwen3_tts import Qwen3TTSProvider
 from core.models import Article, Source
 from core.persistence import WorldStore
 
@@ -54,14 +55,22 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="qwen3:4b")
     parser.add_argument("--base-url", default="http://localhost:11434")
+    parser.add_argument("--real-tts", action="store_true",
+                        help="use real Qwen3-TTS speech instead of silent PCM")
+    parser.add_argument("--tts-out", default="",
+                        help="optional path to write the synthesized WAV")
     args = parser.parse_args()
 
     print("=== MindBroadcast live end-to-end proof (real model, no stubs) ===")
-    print(f"model: {args.model}   endpoint: {args.base_url}\n")
+    print(f"model: {args.model}   endpoint: {args.base_url}")
+    print(f"tts:   {'Qwen3-TTS (real speech)' if args.real_tts else 'silent PCM'}\n")
 
     provider = OllamaProvider(base_url=args.base_url, model=args.model)
     embedder = OllamaEmbeddingProvider(base_url=args.base_url)
-    tts = SilenceTTSProvider()
+    if args.real_tts:
+        tts = Qwen3TTSProvider()
+    else:
+        tts = SilenceTTSProvider()
     results = []
 
     # 0. Health — the model must be actually reachable and present.
@@ -172,7 +181,19 @@ async def main():
         director.advance("live-seg", status)
     director.queue.append("live-seg")
     synth = await tts.synthesize(_synth_req("live-seg", "gen-live",
-                                            "Unemployment was 6.1% in March."))
+                                            "Unemployment was six point one percent in March."))
+    # With real TTS, prove the audio is actual speech, not silence.
+    import numpy as _np
+    _samples = _np.frombuffer(synth.audio, dtype=_np.int16)
+    _peak = int(_np.abs(_samples).max()) if len(_samples) else 0
+    if args.real_tts:
+        results.append(log("audio: real speech synthesized (non-silent)",
+                           _peak > 100,
+                           f"peak={_peak}/32767, {len(synth.audio)} bytes, "
+                           f"{synth.duration_ms}ms"))
+        if args.tts_out:
+            _write_wav(args.tts_out, synth.audio, synth.sample_rate)
+            print(f"       wrote {args.tts_out}")
     director.attach_audio("live-seg", AudioChunk(
         segment_id="live-seg", synthesis_attempt="gen-live", sequence=0,
         data=synth.audio, duration_ms=synth.duration_ms,
@@ -200,6 +221,18 @@ async def main():
 def _script(turns):
     from core.broadcast.entities import BroadcastScript
     return BroadcastScript(segment_id="live-seg", version=1, turns=turns)
+
+
+def _write_wav(path, pcm, sample_rate):
+    """Wrap canonical pcm_s16le mono in a minimal RIFF/WAVE header."""
+    import struct
+    data = pcm
+    header = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVE"
+    header += b"fmt " + struct.pack("<IHHIIHH", 16, 1, 1, sample_rate,
+                                    sample_rate * 2, 2, 16)
+    header += b"data" + struct.pack("<I", len(data))
+    with open(path, "wb") as handle:
+        handle.write(header + data)
 
 
 def _synth_req(segment_id, attempt, text):
