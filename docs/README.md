@@ -35,6 +35,7 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 | 11 | [PHASE_1_PLAN.md](PHASE_1_PLAN.md) | Task-by-task plan for persistence and domain integrity — the first build phase. |
 | 12 | [ACCEPTANCE_CRITERIA.md](ACCEPTANCE_CRITERIA.md) | Definition of Done and Gates 1–10. |
 | 13 | [DECISIONS.md](DECISIONS.md) | ADR log. Ratify before code, per ADR-gated engineering. |
+| 15 | [DECISIONS_PHASE1.md](DECISIONS_PHASE1.md) | ADRs 11–14: decisions taken during Phase 1 implementation. |
 | 14 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
 | 15 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
 
@@ -45,4 +46,5 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 - `MISSING` — not built.
 - `DEFERRED` — intentionally out of scope for early phases.
 
-Current status: see PHASE_0_AUDIT.md.
+**Current status: Phase 1 complete, Gate 1 MET — 253 tests passing** (baseline
+was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gate 1 evidence".

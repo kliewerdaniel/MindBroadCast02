@@ -32,37 +32,43 @@ isolation or reliability.
 
 ---
 
-## ADR-002: Port-and-fix the existing models, or rebuild from scratch?
+## ADR-002: Port-and-fix the existing persistence layer
 
-**Status:** PROPOSED — needs ratification before Phase 1 code
+**Status:** RATIFIED (Option A, with the documented fallback exercised)
+**Date:** 2026-10-12
 
-**Context:** The prior implementation (`kliewerdaniel/MindBroadcast`) has
-~1,078 lines of production code: a SQLite persistence layer, 7 domain
-dataclasses, and 49 passing tests. It also has 27 failing tests, four domain
-gaps that violate the spec (no Source, no Article, Correction collapsed into
-Evidence, snapshot is an aggregation), and only one UNIQUE constraint.
+**Context:** The prior implementation (`kliewerdaniel/MindBroadcast`) had
+~1,078 lines: a SQLite persistence layer, 7 domain dataclasses, 49 passing
+tests, and four domain gaps violating the spec (no Source, no Article,
+Correction collapsed into Evidence, snapshot was an aggregation).
 
-**Option A — Port and fix.** Copy `core/models.py`, `core/persistence.py`,
-`core/snapshot.py` into this repo; apply the Phase 1 work stream (B1–B7) as
-migrations and rewrites; carry forward the 49 passing tests.
+**Decision:** Port and fix. The domain model and persistence layer were
+rewritten against the documented contracts, carrying forward the intent of
+the existing tests rather than their old field names.
 
-**Option B — Rebuild from the documented contracts.** Write fresh models and
-schema against DOMAIN_MODEL.md, with tests written first.
+**What actually happened — and why it mattered:** reading
+`core/persistence.py` in full (the decision rule this ADR set) revealed the
+connection layer was *not* sound, so the fallback fired:
 
-**Recommendation: Option A.** The persistence layer is 730 lines of working
-SQLite plumbing (WAL, connection handling, append-only attempts) that is
-genuinely reusable, and the 49 passing tests encode real behavior. The gaps are
-structural (missing tables, wrong enum sets) and are addressed by migration, not
-by discarding the code. Rebuilding would re-derive transaction handling that
-already works while producing no additional correctness.
+- In-memory databases were shared via a module-level dict, so every
+  `WorldStore` saw every other's data. This was the true root cause of all 27
+  baseline failures — not only the async fixture.
+- `Database.initialize()` referenced `self.db.db_path` where `self` *is* the
+  Database: an `AttributeError` on every non-memory path, and it never closed
+  the connection it opened.
+- `_close_conn` had the same bug plus an infinite-recursion branch.
 
-**Against Option A:** the schema gaps are deep enough (Article/Event split
-requires moving data) that a careful migration is nearly as much work as a fresh
-schema. If the port reveals the connection layer is unsound, fall back to
-Option B for the persistence layer while keeping the tests as the specification.
+**Outcome:** the persistence layer was rebuilt (connection ownership per
+instance, centralized transaction helper, FK/WAL/busy-timeout on every
+connection), while the old tests were kept as the behavioural specification
+and rewritten against the new spec-shaped model. Result: 49 pass / 27 fail →
+**253 pass / 0 fail**.
 
-**Decision rule:** read `core/persistence.py` in full. If transaction handling
-and connection centralization are sound → Option A. If they are not → Option B.
+**Consequence:** the "port" was a port of *contracts*, not of code. Anyone
+expecting to diff this repo against the old one should not — the schema is
+new (15 tables, `SCHEMA_VERSION=2`) and legacy data arrives through
+`core/legacy_import.py`, which is tested to preserve every timestamp and to
+keep corrections out of the evidence table.
 
 ---
 

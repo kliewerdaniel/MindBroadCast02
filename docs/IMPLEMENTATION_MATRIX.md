@@ -29,7 +29,7 @@ only).
 |---|---|---|---|
 | Local-first execution | ARCHITECTURE.md P1 | all | N/A |
 | Deterministic boundaries | ARCHITECTURE.md P2 | all | N/A |
-| Append-only provenance | PERSISTENCE_AND_EVENTS.md | 1 | PARTIAL — `test_story_cannot_be_updated_directly` fails |
+| Append-only provenance | PERSISTENCE_AND_EVENTS.md | 1 | **IMPLEMENTED** — 12 DB triggers, RAISE(ABORT) |
 | Explicit epistemic status | EPISTEMIC_INVARIANTS.md | 1, 3 | PARTIAL — enum set incomplete |
 | Observation / interpretation / publication separation | EPISTEMIC_INVARIANTS.md | 3, 5 | MISSING (no generation layer yet) |
 
@@ -48,33 +48,33 @@ only).
 |---|---|---|---|
 | Record conventions | DOMAIN_MODEL.md §5.1 | 1 | PARTIAL |
 | Three time axes | DOMAIN_MODEL.md §5.9.1 | 1 | PARTIAL |
-| `Source` | DOMAIN_MODEL.md §5.2 | 1 | **MISSING** |
-| `Article` | DOMAIN_MODEL.md §5.3 | 1 | **MISSING** — `Event` conflates it |
-| Article versioning | DOMAIN_MODEL.md §5.3.1 | 1 | MISSING |
-| `Entity` | DOMAIN_MODEL.md §5.4 | 1 | PARTIAL — no status, thin fields |
-| `Event` | DOMAIN_MODEL.md §5.5 | 1 | PARTIAL — no status field |
-| `Story` | DOMAIN_MODEL.md §5.5.1 | 1 | PARTIAL — thin |
-| `Claim` + types | DOMAIN_MODEL.md §5.6 | 1 | PARTIAL — no `claim_type` |
-| Claim status set | DOMAIN_MODEL.md §5.6.2 | 1 | PARTIAL — 4 of 8 statuses |
-| `Evidence` | DOMAIN_MODEL.md §5.7 | 1 | PARTIAL |
-| `ClaimEvidence` association | DOMAIN_MODEL.md §5.7 | 1 | **MISSING** |
-| `Correction` | DOMAIN_MODEL.md §5.8 | 1 | **VIOLATED** — stored as Evidence |
-| `WorldSnapshot` | DOMAIN_MODEL.md §5.9 | 1 | **VIOLATED** — counts + titles only |
-| Snapshot atomic boundary | DOMAIN_MODEL.md §5.9.1 | 1 | MISSING |
-| Provenance graph | DOMAIN_MODEL.md §5.10 | 1, 3 | MISSING — no association table |
+| `Source` | DOMAIN_MODEL.md §5.2 | 1 | **IMPLEMENTED** |
+| `Article` | DOMAIN_MODEL.md §5.3 | 1 | **IMPLEMENTED** — source FK, version chain, UNIQUE(content_hash) |
+| Article versioning | DOMAIN_MODEL.md §5.3.1 | 1 | **IMPLEMENTED** — `supersede_article`, walkable chain |
+| `Entity` | DOMAIN_MODEL.md §5.4 | 1 | **IMPLEMENTED** — status, aliases, external IDs, explicit merge |
+| `Event` | DOMAIN_MODEL.md §5.5 | 1 | **IMPLEMENTED** — split from Article; full status set |
+| `Story` | DOMAIN_MODEL.md §5.5.1 | 1 | **IMPLEMENTED** — coverage tracking, superseding status changes |
+| `Claim` + types | DOMAIN_MODEL.md §5.6 | 1 | **IMPLEMENTED** — 7 claim types |
+| Claim status set | DOMAIN_MODEL.md §5.6.2 | 1 | **IMPLEMENTED** — 8 statuses + legacy mapping |
+| `Evidence` | DOMAIN_MODEL.md §5.7 | 1 | **IMPLEMENTED** — extraction provenance, article FK |
+| `ClaimEvidence` association | DOMAIN_MODEL.md §5.7 | 1 | **IMPLEMENTED** — 6 relationship types |
+| `Correction` | DOMAIN_MODEL.md §5.8 | 1 | **IMPLEMENTED** — first-class table, 7 types |
+| `WorldSnapshot` | DOMAIN_MODEL.md §5.9 | 1 | **IMPLEMENTED** — watermark, hash, manifest, parent chain |
+| Snapshot atomic boundary | DOMAIN_MODEL.md §5.9.1 | 1 | **IMPLEMENTED** — single read transaction |
+| Provenance graph | DOMAIN_MODEL.md §5.10 | 1, 3 | PARTIAL — association tables + event log exist; traversal is Phase 3 |
 | CKU | DOMAIN_MODEL.md §8.3 | 3+ | DEFERRED (spec: interface over domain objects) |
 
 ## §6 Persistence, events, state
 
 | Item | Doc | Phase | Status |
 |---|---|---|---|
-| SQLite practices (FK, WAL, busy timeout, migrations) | PERSISTENCE_AND_EVENTS.md | 1 | PARTIAL — WAL present; FK/uniqueness gaps |
-| Domain event log + envelope | PERSISTENCE_AND_EVENTS.md §6.2 | 1 | **MISSING** |
+| SQLite practices (FK, WAL, busy timeout, migrations) | PERSISTENCE_AND_EVENTS.md | 1 | **IMPLEMENTED** — FK/WAL/busy-timeout on every connection; `core/migrations.py` |
+| Domain event log + envelope | PERSISTENCE_AND_EVENTS.md §6.2 | 1 | **IMPLEMENTED** — full envelope, append-only |
 | Event sourcing hybrid | PERSISTENCE_AND_EVENTS.md §6.3 | 1 | MISSING |
-| Transactional outbox | PERSISTENCE_AND_EVENTS.md §6.4 | 1 | **MISSING** |
-| Idempotency keys | PERSISTENCE_AND_EVENTS.md §6.5 | 1 | **MISSING** |
+| Transactional outbox | PERSISTENCE_AND_EVENTS.md §6.4 | 1 | **IMPLEMENTED** — standalone + transactional entry points |
+| Idempotency keys | PERSISTENCE_AND_EVENTS.md §6.5 | 1 | **IMPLEMENTED** |
 | DB/filesystem consistency (artifact lifecycle) | PERSISTENCE_AND_EVENTS.md §6.6 | 1, 5 | MISSING |
-| Startup recovery (10 steps) | PERSISTENCE_AND_EVENTS.md §6.7 | 1 | **MISSING** |
+| Startup recovery (10 steps) | PERSISTENCE_AND_EVENTS.md §6.7 | 1 | **IMPLEMENTED** — `core/lifecycle.py`, fails on integrity violations |
 
 ## §7 Ingestion and source management
 
@@ -265,11 +265,15 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | 0 verified subsystem gates met |
-| PARTIAL | ~12 domain objects and infrastructure items |
-| MISSING | ~70 spec features across 14 subsystems |
+| IMPLEMENTED | Gate 1 closed; 19 domain/infrastructure items |
+| PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
+| MISSING | ~65 spec features across 13 subsystems (Phases 2–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
-| VIOLATED | 3 (Correction-as-Evidence, snapshot-as-aggregation, append-only) |
+| VIOLATED | 0 — all three prior violations resolved |
+
+The gap between the specification and the implementation is the project.
+Phase 1 closed the three violations and the P0 domain gaps. **Gate 1 is MET:
+253 tests passing.**
 
 The gap between the specification and the implementation is the project. Phase 1
 closes the three violations and the P0 domain gaps.

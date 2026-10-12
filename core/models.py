@@ -190,6 +190,22 @@ class ExtractionStatus(Enum):
     FAILED = "failed"
 
 
+class OperatingMode(Enum):
+    """System-level operating mode, distinct from editorial mode (§2.3).
+
+    The system can be LIVE while performing a historical-analysis segment.
+    Health and programming decisions are reasoned about independently.
+    """
+    LIVE = "live"
+    IDLE = "idle"
+    DEGRADED = "degraded"
+    REPLAY = "replay"
+    SIMULATION = "simulation"
+    MAINTENANCE = "maintenance"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
+
+
 # ── Source and ownership ─────────────────────────────────────────────
 
 

@@ -2,8 +2,8 @@
 
 A persistent, autonomous, news-driven intelligence and broadcasting system.
 
-**Status:** Phase 0 complete (audit). Phase 1 (persistence and domain
-integrity) planned, not started. Baseline: **49 tests passed, 27 failed.**
+**Status:** Phase 0 complete (audit). **Phase 1 complete — Gate 1 MET.**
+Baseline was 49 passed / 27 failed; now **253 passed / 0 failed**.
 
 ## What this is
 
@@ -55,7 +55,7 @@ Where a doc and the spec disagree, the spec wins.
 
 ```
 Phase 0  Audit                      ✅ COMPLETE (49 pass / 27 fail baseline)
-Phase 1  Persistence + domain       ⬜ Gate 1   — plan ready
+Phase 1  Persistence + domain       ✅ COMPLETE — Gate 1 MET (253 pass / 0 fail)
 Phase 2  Ingestion + dedup          ⬜ Gate 2
 Phase 3  Knowledge compilation      ⬜ Gate 3
 Phase 4  World model + stories      ⬜ Gates 4, 5
@@ -65,6 +65,30 @@ Phase 7  Audience + operator UI     ⬜ Gate 9
 Phase 8  Reliability + streaming    ⬜ Gates 7, 10
 Phase 9  Recursive improvement      ⬜
 ```
+
+## Code layout
+
+```
+MindBroadCast02/
+├── README.md
+├── pytest.ini, requirements.txt
+├── core/
+│   ├── models.py           Domain model (spec §5) + OperatingMode
+│   ├── persistence.py      SQLite store: 15 tables, FK/WAL, append-only triggers
+│   ├── migrations.py       Versioned migration runner (up/down, ledger)
+│   ├── lifecycle.py        Startup recovery (10 steps), mode, shutdown
+│   ├── snapshot.py         Snapshot service
+│   └── legacy_import.py    Pre-Phase-1 schema importer (C2)
+└── tests/                  253 tests
+    ├── test_models.py          55
+    ├── test_persistence.py     90
+    ├── test_epistemic.py       32
+    ├── test_snapshot.py        18
+    ├── test_recovery.py        24
+    └── test_migrations.py      34
+```
+
+Run the suite: `python3 -m pytest -q`
 
 ## Engineering rules
 
@@ -79,9 +103,14 @@ Phase 9  Recursive improvement      ⬜
 ## Prior implementation
 
 An earlier implementation exists at `github.com/kliewerdaniel/MindBroadcast`
-(~1,078 lines of production code: SQLite persistence, 7 domain dataclasses).
-Phase 0 audited it directly; the findings and the decision on whether to port or
-rebuild are in `docs/PHASE_0_AUDIT.md` and `docs/DECISIONS.md` (ADR-002).
+(~1,078 lines: SQLite persistence, 7 domain dataclasses). Phase 0 audited it and
+reproduced its baseline; Phase 1 resolved its defects. See ADR-002 in
+`docs/DECISIONS.md` for what was carried forward and what was rebuilt.
+
+Note: this is **not** a code-level continuation of that repo. The schema is new
+(15 tables, `SCHEMA_VERSION=2`) and legacy data arrives through
+`core/legacy_import.py`, which is tested to preserve every timestamp and keep
+corrections out of the evidence table.
 
 ## Layout
 
