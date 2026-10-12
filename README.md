@@ -2,8 +2,8 @@
 
 A persistent, autonomous, news-driven intelligence and broadcasting system.
 
-**Status:** Phase 0 complete (audit). **Phase 1 complete — Gate 1 MET.**
-Baseline was 49 passed / 27 failed; now **253 passed / 0 failed**.
+**Status:** Phases 0–2 complete. **Gate 1 and Gate 2 MET.**
+Baseline was 49 passed / 27 failed; now **357 passed / 0 failed**.
 
 ## What this is
 
@@ -55,8 +55,8 @@ Where a doc and the spec disagree, the spec wins.
 
 ```
 Phase 0  Audit                      ✅ COMPLETE (49 pass / 27 fail baseline)
-Phase 1  Persistence + domain       ✅ COMPLETE — Gate 1 MET (253 pass / 0 fail)
-Phase 2  Ingestion + dedup          ⬜ Gate 2
+Phase 1  Persistence + domain       ✅ COMPLETE — Gate 1 MET
+Phase 2  Ingestion + dedup          ✅ COMPLETE — Gate 2 MET
 Phase 3  Knowledge compilation      ⬜ Gate 3
 Phase 4  World model + stories      ⬜ Gates 4, 5
 Phase 5  Single-persona broadcast   ⬜ Gate 6
@@ -78,14 +78,23 @@ MindBroadCast02/
 │   ├── migrations.py       Versioned migration runner (up/down, ledger)
 │   ├── lifecycle.py        Startup recovery (10 steps), mode, shutdown
 │   ├── snapshot.py         Snapshot service
-│   └── legacy_import.py    Pre-Phase-1 schema importer (C2)
-└── tests/                  253 tests
+│   ├── legacy_import.py    Pre-Phase-1 schema importer (C2)
+│   └── ingestion/
+│       ├── security.py         SSRF/scheme/size policy, content stripping (§7.6)
+│       ├── canonicalization.py Conservative URL + text normalization (§7.4)
+│       ├── deduplication.py    Five distinct duplication levels (§7.5)
+│       ├── scheduler.py        Polling, backoff, backpressure (§7.3)
+│       ├── adapters.py         RSS/Atom adapters (§7.2)
+│       ├── fetcher.py          Policy-enforcing HTTP fetch
+│       └── pipeline.py         §7.1 flow to durable capture
+└── tests/                  357 tests
     ├── test_models.py          55
     ├── test_persistence.py     90
     ├── test_epistemic.py       32
     ├── test_snapshot.py        18
     ├── test_recovery.py        24
-    └── test_migrations.py      34
+    ├── test_migrations.py      34
+    └── test_ingestion.py      104
 ```
 
 Run the suite: `python3 -m pytest -q`

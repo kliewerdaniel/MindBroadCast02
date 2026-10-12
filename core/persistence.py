@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS articles (
     first_seen_at TIMESTAMP NOT NULL,
     fetched_at TIMESTAMP NOT NULL,
     language TEXT NOT NULL DEFAULT 'en',
-    content_hash TEXT NOT NULL UNIQUE,
+    content_hash TEXT NOT NULL,
     normalized_text TEXT NOT NULL DEFAULT '',
     raw_content_reference TEXT,
     extraction_status TEXT NOT NULL DEFAULT 'pending',
@@ -157,7 +157,12 @@ CREATE TABLE IF NOT EXISTS articles (
     supersedes_article_id TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
     FOREIGN KEY (source_id) REFERENCES sources(id),
-    FOREIGN KEY (supersedes_article_id) REFERENCES articles(id)
+    FOREIGN KEY (supersedes_article_id) REFERENCES articles(id),
+    -- Uniqueness is scoped to (source, content): the same source publishing
+    -- identical text twice is a duplicate capture, but a *different* source
+    -- reproducing the same wire report is syndication, which must be
+    -- recordable rather than rejected (spec §7.5).
+    UNIQUE(source_id, content_hash)
 );
 
 CREATE TABLE IF NOT EXISTS entities (

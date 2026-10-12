@@ -12,7 +12,7 @@ remain understandable and recoverable over time.**
 | Gate | Requirement | Phase | Status |
 |---|---|---|---|
 | 1 | Persistence and migrations are reliable. | 1 | **MET** — 253 tests, migration runner + recovery + legacy import verified |
-| 2 | Ingestion and deduplication are idempotent. | 2 | NOT MET |
+| 2 | Ingestion and deduplication are idempotent. | 2 | **MET** — 104 ingestion tests; all ten §7.7 criteria verified |
 | 3 | Claims and evidence have traceable provenance. | 3 | PARTIAL — provenance is recorded and traceable at the persistence layer; extraction passes are Phase 3 |
 | 4 | World snapshots preserve consistent historical state. | 4 | PARTIAL — snapshots capture full state with watermark/hash/manifest and an atomic boundary; temporal reasoning and replay are Phase 4 |
 | 5 | Story selection is explainable and reproducible. | 4 | NOT MET |
@@ -67,10 +67,10 @@ the corresponding gate closes. The critical ones by gate:
 | 5 | I6 (personas cannot override evidence), I7 (multiple outputs ≠ corroboration), I12 (generated ≠ validated ≠ delivered), I13 (multi-mechanism validation) — Phase 5/6 |
 | 7 | I15 (allegation ≠ assertion), I16 (config flags are not enforcement) — Phase 5/7 |
 
-## Gate 1 evidence (recorded 2026-10-12)
+## Gate 2 evidence (recorded 2026-10-12)
 
 Command: `python3 -m pytest -q`
-Result: **253 passed, 0 failed** (baseline: 49 passed, 27 failed)
+Result: **357 passed, 0 failed** (Phase 1 baseline was 253; Phase 2 added 104)
 
 | File | Tests | Covers |
 |---|---|---|
@@ -80,6 +80,31 @@ Result: **253 passed, 0 failed** (baseline: 49 passed, 27 failed)
 | test_snapshot.py | 18 | Snapshot creation, comparison, retrieval, artifacts |
 | test_recovery.py | 24 | Transactions, crash recovery, fault injection, concurrency, integrity |
 | test_migrations.py | 34 | Migration runner, lifecycle recovery, legacy import |
+| test_ingestion.py | 104 | All ten §7.7 criteria, §7.6 security, §7.5 dedup levels, §7.3 scheduling |
+
+### The ten §7.7 criteria, each with a named test
+
+| # | Criterion | Test |
+|---|---|---|
+| 1 | A configured feed can be fetched and parsed | `test_criterion_1_feed_is_fetched_and_parsed` |
+| 2 | A malformed feed does not crash the application | `test_criterion_2_malformed_feed_does_not_crash` |
+| 3 | Duplicate fetches create no duplicate articles | `test_criterion_3_duplicate_fetch_creates_nothing` |
+| 4 | Article durably stored before processing scheduled | `test_criterion_4_article_stored_before_work_scheduled` |
+| 5 | Source and observation timestamps preserved separately | `test_criterion_5_timestamps_preserved_separately` |
+| 6 | Network failure does not corrupt captured information | `test_criterion_6_network_failure_preserves_data` |
+| 7 | Retried work is idempotent | `test_criterion_7_retry_is_idempotent` |
+| 8 | A restarted process recovers pending ingestion tasks | `test_criterion_8_restart_recovers_pending_work` |
+| 9 | A revised article remains distinguishable | `test_criterion_9_revision_remains_distinguishable` |
+| 10 | External content cannot execute application commands | `test_criterion_10_external_content_cannot_execute` |
+
+Security coverage: 14 parametrized SSRF/scheme cases, redirect re-validation
+(the property that a permitted first hop cannot reach a blocked host on a
+later one), redirect-chain bound, response-size cap, active-content stripping,
+injection flagging, and transient/permanent HTTP classification.
+
+Additional verifications outside the suite: recovery refuses on an injected
+orphaned FK; all twelve append-only triggers abort; legacy import passes
+recovery with zero violations.
 
 Additional verifications performed outside the suite: recovery refuses on an
 injected orphaned foreign key (raises `RecoveryError`, enters `DEGRADED`);

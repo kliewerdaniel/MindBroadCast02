@@ -80,12 +80,12 @@ only).
 
 | Item | Doc | Phase | Status |
 |---|---|---|---|
-| Source adapters + interface | ARCHITECTURE.md §Provider contracts | 2 | MISSING |
-| Polling, backoff, backpressure | EDITORIAL_MODEL.md §Priority classes | 2 | MISSING |
-| Canonicalization | DOMAIN_MODEL.md §5.3 | 2 | MISSING |
-| 5-level deduplication | EPISTEMIC_INVARIANTS.md I8, I9 | 2 | MISSING |
-| External-content security (SSRF, injection) | ARCHITECTURE.md §Security | 2 | MISSING |
-| Ingestion acceptance criteria (10) | PHASE_1_PLAN.md analog | 2 | — |
+| Source adapters + interface | ARCHITECTURE.md §Provider contracts | 2 | **IMPLEMENTED** — `ingestion/adapters.py`, §7.2 contract |
+| Polling, backoff, backpressure | EDITORIAL_MODEL.md §Priority classes | 2 | **IMPLEMENTED** — `ingestion/scheduler.py` |
+| Canonicalization | DOMAIN_MODEL.md §5.3 | 2 | **IMPLEMENTED** — `ingestion/canonicalization.py`, rules recorded |
+| 5-level deduplication | EPISTEMIC_INVARIANTS.md I8, I9 | 2 | **IMPLEMENTED** — `ingestion/deduplication.py`, classified candidates |
+| External-content security (SSRF, injection) | ARCHITECTURE.md §Security | 2 | **IMPLEMENTED** — `ingestion/security.py`, redirect re-validation |
+| Ingestion acceptance criteria (10) | test_ingestion.py | 2 | **ALL TEN TESTED** |
 
 ## §8 Knowledge compiler
 
@@ -265,9 +265,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gate 1 closed; 19 domain/infrastructure items |
+| IMPLEMENTED | Gates 1–2 closed; 25 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~65 spec features across 13 subsystems (Phases 2–9) |
+| MISSING | ~60 spec features across 12 subsystems (Phases 3–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 

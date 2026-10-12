@@ -127,6 +127,11 @@ store, deduplication engine, durable processing queue.
 **Exit criterion (Gate 2):** New source material can be captured, deduplicated,
 and scheduled for processing **without loss of already committed information.**
 
+**Status: COMPLETE — Gate 2 MET.** 104 ingestion tests; all ten §7.7 criteria
+verified. Delivered: `core/ingestion/` with security (§7.6), canonicalization
+(§7.4), deduplication (§7.5), scheduling (§7.3), adapters (§7.2), fetcher, and
+the §7.1 pipeline. Plan: `docs/PHASE_2_PLAN.md`.
+
 ---
 
 ## Phase 3: Knowledge compilation
