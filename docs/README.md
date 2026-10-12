@@ -37,6 +37,8 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 | 13 | [DECISIONS.md](DECISIONS.md) | ADR log. Ratify before code, per ADR-gated engineering. |
 | 15 | [DECISIONS_PHASE1.md](DECISIONS_PHASE1.md) | ADRs 11–14: decisions taken during Phase 1 implementation. |
 | 16 | [DECISIONS_PHASE2.md](DECISIONS_PHASE2.md) | ADRs 15–19: decisions taken during Phase 2 implementation. |
+| 17 | [DECISIONS_PHASE3.md](DECISIONS_PHASE3.md) | ADRs 20–25: decisions taken during Phase 3 implementation. |
+| 18 | [PHASE_3_PLAN.md](PHASE_3_PLAN.md) | Knowledge Compiler plan. **Executed.** |
 | 17 | [PHASE_2_PLAN.md](PHASE_2_PLAN.md) | Ingestion and source normalization plan. **Executed.** |
 | 14 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
 | 15 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
@@ -48,5 +50,5 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 - `MISSING` — not built.
 - `DEFERRED` — intentionally out of scope for early phases.
 
-**Current status: Phases 0–2 complete — Gates 1 and 2 MET, 357 tests passing**
-(baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gate 2 evidence".
+**Current status: Phases 0–3 complete — Gates 1, 2 and 3 MET, 428 tests passing**
+(baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gate 3 evidence".

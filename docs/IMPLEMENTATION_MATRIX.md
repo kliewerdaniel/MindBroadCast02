@@ -62,7 +62,7 @@ only).
 | `WorldSnapshot` | DOMAIN_MODEL.md §5.9 | 1 | **IMPLEMENTED** — watermark, hash, manifest, parent chain |
 | Snapshot atomic boundary | DOMAIN_MODEL.md §5.9.1 | 1 | **IMPLEMENTED** — single read transaction |
 | Provenance graph | DOMAIN_MODEL.md §5.10 | 1, 3 | PARTIAL — association tables + event log exist; traversal is Phase 3 |
-| CKU | DOMAIN_MODEL.md §8.3 | 3+ | DEFERRED (spec: interface over domain objects) |
+| CKU | DOMAIN_MODEL.md §8.3 | 3 | **IMPLEMENTED** — read-only view, no table (ADR-024) |
 
 ## §6 Persistence, events, state
 
@@ -91,16 +91,16 @@ only).
 
 | Item | Doc | Phase | Status |
 |---|---|---|---|
-| Pass 1 structural normalization | ARCHITECTURE.md | 3 | MISSING |
-| Pass 2 entity extraction | ARCHITECTURE.md | 3 | MISSING |
-| Pass 3 claim extraction (attribution preserved) | EPISTEMIC_INVARIANTS.md I2 | 3 | MISSING |
-| Pass 4 evidence linking | ARCHITECTURE.md | 3 | MISSING |
-| Pass 5 entity resolution (candidate ≠ merge) | DOMAIN_MODEL.md §5.4 | 3 | MISSING |
-| Pass 6 event resolution | ARCHITECTURE.md | 3 | MISSING |
-| Pass 7 contradiction / corroboration | EPISTEMIC_INVARIANTS.md I10 | 3 | MISSING |
-| Pass 8 knowledge integration | PERSISTENCE_AND_EVENTS.md | 3 | MISSING |
-| Embeddings + semantic retrieval | ARCHITECTURE.md §14.2 | 3–4 | MISSING |
-| Versioned compilation + invalidation | PERSISTENCE_AND_EVENTS.md §Migrations | 3 | MISSING |
+| Pass 1 structural normalization | ARCHITECTURE.md | 3 | **IMPLEMENTED** — offsets verified against source |
+| Pass 2 entity extraction | ARCHITECTURE.md | 3 | **IMPLEMENTED** — mentions only, never merges |
+| Pass 3 claim extraction (attribution preserved) | EPISTEMIC_INVARIANTS.md I2 | 3 | **IMPLEMENTED** — attribution checked first |
+| Pass 4 evidence linking | ARCHITECTURE.md | 3 | **IMPLEMENTED** — ATTRIBUTES vs SUPPORTS |
+| Pass 5 entity resolution (candidate ≠ merge) | DOMAIN_MODEL.md §5.4 | 3 | **PARTIAL** — deterministic only; model-assisted is Phase 4+ |
+| Pass 6 event resolution | ARCHITECTURE.md | 3 | **PARTIAL** — one conservative candidate per article |
+| Pass 7 contradiction / corroboration | EPISTEMIC_INVARIANTS.md I10 | 3 | **IMPLEMENTED** — qualifiers compared before contradiction |
+| Pass 8 knowledge integration | PERSISTENCE_AND_EVENTS.md | 3 | **IMPLEMENTED** — all-or-nothing, dependency rows |
+| Embeddings + semantic retrieval | ARCHITECTURE.md §14.2 | 4+ | DEFERRED (spec: FTS first, vector DB on measured need) |
+| Versioned compilation + invalidation | PERSISTENCE_AND_EVENTS.md §Migrations | 3 | **IMPLEMENTED** — pass versions + DerivedObjectsRegistered |
 
 ## §9 World state
 
@@ -265,9 +265,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gates 1–2 closed; 25 domain/infrastructure items |
+| IMPLEMENTED | Gates 1–3 closed; 36 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~60 spec features across 12 subsystems (Phases 3–9) |
+| MISSING | ~55 spec features across 11 subsystems (Phases 4–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 

@@ -160,6 +160,13 @@ associations, provenance graph, compiler evaluation corpus.
 source material from which it was extracted and **distinguish extraction
 confidence from evidentiary support.**
 
+**Status: COMPLETE — Gate 3 MET.** 71 compiler tests; all eight exit criteria
+verified. Delivered: `core/compiler/` with the eight §8 passes. Default
+extractors are deterministic (spaCy NER + rule-based classification) so every
+pass is reproducible from its version string alone (ADR-020). CKU is a
+read-only view with no table of its own (ADR-024).
+Plan: `docs/PHASE_3_PLAN.md`. Decisions: `docs/DECISIONS_PHASE3.md`.
+
 ---
 
 ## Phase 4: World model and story intelligence

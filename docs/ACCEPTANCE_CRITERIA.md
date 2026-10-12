@@ -13,7 +13,7 @@ remain understandable and recoverable over time.**
 |---|---|---|---|
 | 1 | Persistence and migrations are reliable. | 1 | **MET** — 253 tests, migration runner + recovery + legacy import verified |
 | 2 | Ingestion and deduplication are idempotent. | 2 | **MET** — 104 ingestion tests; all ten §7.7 criteria verified |
-| 3 | Claims and evidence have traceable provenance. | 3 | PARTIAL — provenance is recorded and traceable at the persistence layer; extraction passes are Phase 3 |
+| 3 | Claims and evidence have traceable provenance. | 3 | **MET** — 71 compiler tests; claim→span→evidence chain verified |
 | 4 | World snapshots preserve consistent historical state. | 4 | PARTIAL — snapshots capture full state with watermark/hash/manifest and an atomic boundary; temporal reasoning and replay are Phase 4 |
 | 5 | Story selection is explainable and reproducible. | 4 | NOT MET |
 | 6 | Generated scripts pass mandatory validation. | 5 | NOT MET |
@@ -66,6 +66,43 @@ the corresponding gate closes. The critical ones by gate:
 | 4 | I8, I11 (uncertainty attaches where it occurs) — tested |
 | 5 | I6 (personas cannot override evidence), I7 (multiple outputs ≠ corroboration), I12 (generated ≠ validated ≠ delivered), I13 (multi-mechanism validation) — Phase 5/6 |
 | 7 | I15 (allegation ≠ assertion), I16 (config flags are not enforcement) — Phase 5/7 |
+
+## Gate 3 evidence (recorded 2026-10-12)
+
+Command: `python3 -m pytest -q`
+Result: **428 passed, 0 failed** (Phase 2 was 357; Phase 3 added 71)
+
+| File | Tests | Covers |
+|---|---|---|
+| test_ingestion.py | 104 | All ten §7.7 criteria, §7.6 security, §7.5 dedup, §7.3 scheduling |
+| test_compiler.py | 71 | All eight §8 passes, attribution, CKU, provenance chain |
+
+### The eight Gate 3 exit criteria, each verified
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | A structured claim traces to the source passage it came from, by offset | MET — every claim's `span` reproduces its source substring |
+| 2 | Extraction confidence is distinct from evidentiary support | MET — separate fields; new claims are UNASSESSED |
+| 3 | Attribution survives extraction | MET — the three §8.2 sentences produce different types |
+| 4 | `ATTRIBUTES` is never recorded as `SUPPORTS` | MET — structural assignment; zero violations |
+| 5 | Conflicting numbers with different temporal scope are not contradictions | MET — Pass 7 compares qualifiers first |
+| 6 | Every extracted object records extractor + version | MET — `component@version` on every record |
+| 7 | Dependency tracking invalidates only affected derived objects | MET — `DerivedObjectsRegistered` events |
+| 8 | CKU is an interface over existing objects, not a new table | MET — no `cku` table exists |
+
+### The §8.2 attribution requirement, tested directly
+
+Three sentences that mean different things, asserted to classify differently:
+
+    A minister said that the policy had reduced inflation.  -> ATTRIBUTED
+    The policy reduced inflation.                          -> OBSERVATIONAL
+    An analyst argued that the policy may reduce inflation. -> ATTRIBUTED
+
+Plus: an attributed claim's passage is `ATTRIBUTES`, and the test asserts the
+`SUPPORTS` list is empty. Recording a transcript as supporting the proposition
+it merely reports is invariant I2's most likely failure mode.
+
+---
 
 ## Gate 2 evidence (recorded 2026-10-12)
 
