@@ -6,6 +6,8 @@ const currentMeta = document.getElementById("current-meta");
 const healthDot = document.getElementById("health-dot");
 const healthText = document.getElementById("health-text");
 const demoBtn = document.getElementById("demo-btn");
+const liveBtn = document.getElementById("live-btn");
+const cycleInfo = document.getElementById("cycle-info");
 const runState = document.getElementById("run-state");
 
 let queue = [];        // segments waiting to play
@@ -69,13 +71,22 @@ function connect() {
       addTranscript(data, false);
       queue.push(data);
       playNext();
+    } else if (data.type === "cycle") {
+      // What the system observed and decided this cycle.
+      const line = data.aired
+        ? `watched ${data.articles} articles · ${data.claims} claims · ` +
+          `${data.stories} stories → aired: ${data.story}`
+        : `watched ${data.articles} articles · silent: ${data.silent_reason}`;
+      cycleInfo.textContent = line;
     } else if (data.type === "done") {
       runState.textContent = `done — ${data.segments} segment(s)` +
         (data.errors && data.errors.length ? `, ${data.errors.length} error(s)` : "");
       demoBtn.disabled = false;
+      liveBtn.disabled = false;
     } else if (data.type === "error") {
       runState.textContent = "error: " + data.message;
       demoBtn.disabled = false;
+      liveBtn.disabled = false;
     }
   };
   es.onerror = () => { /* browser auto-reconnects */ };
@@ -110,6 +121,28 @@ async function broadcastDemo() {
 }
 
 demoBtn.addEventListener("click", broadcastDemo);
+
+async function goLive() {
+  liveBtn.disabled = true;
+  demoBtn.disabled = true;
+  runState.textContent = "watching the news…";
+  cycleInfo.textContent = "";
+  try {
+    const res = await fetch("/api/broadcast/auto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cycles: 1 }),
+    });
+    if (res.status === 409) { runState.textContent = "already running"; liveBtn.disabled = false; demoBtn.disabled = false; }
+    else if (!res.ok) { runState.textContent = "failed: " + res.status; liveBtn.disabled = false; demoBtn.disabled = false; }
+  } catch (e) {
+    runState.textContent = "request failed";
+    liveBtn.disabled = false;
+    demoBtn.disabled = false;
+  }
+}
+liveBtn.addEventListener("click", goLive);
+
 refreshHealth();
 setInterval(refreshHealth, 15000);
 connect();

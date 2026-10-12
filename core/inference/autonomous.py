@@ -62,8 +62,10 @@ class AutonomousBroadcaster:
         store: Optional[WorldStore] = None,
         ranker: Optional[StoryRanker] = None,
         db_path: str = ":memory:",
+        on_segment: Optional[Any] = None,
     ):
         self.runtime = runtime
+        self.on_segment = on_segment
         self.store = store or WorldStore(db_path)
         self.ranker = ranker or StoryRanker()
         self.fetcher = Fetcher(transport=AiohttpTransport())
@@ -111,13 +113,22 @@ class AutonomousBroadcaster:
             await self._claim_records())
         cycle.stories_ranked = len(candidates)
 
+        # 3a. Drop stories whose claims are feed boilerplate, not news. An RSS
+        # channel's own description ("Top stories, breaking news... follow news
+        # topics") compiles into a claim like any other; airing it is noise.
+        candidates = [c for c in candidates
+                      if not self._is_boilerplate(c)]
         if not candidates:
-            cycle.silent_reason = "no stories assembled from ingested claims"
+            cycle.silent_reason = ("no substantive stories (only feed "
+                                   "boilerplate was ingested)")
             self.cycles.append(cycle)
             return cycle
 
-        # 4. Rank stories and pick the top one (§10).
-        facts = [self._story_facts(c) for c in candidates]
+        # 4. Rank stories with real signal from their claims (§10) and pick
+        # the top one. Empty facts make every story score equally, so the
+        # ranker would pick arbitrarily — the signal below is what makes the
+        # choice meaningful.
+        facts = [await self._story_facts(c) for c in candidates]
         from ..world_model.ranking import rank_stories
         ranked = rank_stories(self.ranker, facts)
         if not ranked:
@@ -142,6 +153,10 @@ class AutonomousBroadcaster:
         if line is None:
             cycle.silent_reason = "; ".join(self.runtime.errors[-1:]) or \
                 "generation produced no segment"
+        elif self.on_segment is not None:
+            # Notify the listener (console/SSE) exactly as runtime.run() would,
+            # so the autonomous path and the demo path surface segments alike.
+            self.on_segment(line)
         self.cycles.append(cycle)
         return cycle
 
@@ -173,10 +188,58 @@ class AutonomousBroadcaster:
             ))
         return records
 
-    def _story_facts(self, candidate: Any) -> StoryFacts:
-        return StoryFacts(story_id=candidate.story_id,
-                          title=candidate.canonical_title,
-                          now=datetime.now(timezone.utc))
+    async def _story_facts(self, candidate: Any) -> StoryFacts:
+        """Build ranking signal from the story's real claims.
+
+        Populates the fields the ranker actually reads — freshness
+        (material_changes), primary-evidence count, and independent-source
+        groups — so the choice of what to air reflects the content rather than
+        being arbitrary.
+        """
+        from ..world_model.changes import MaterialChange, ChangeKind
+        facts = StoryFacts(story_id=candidate.story_id,
+                           title=candidate.canonical_title,
+                           now=datetime.now(timezone.utc))
+        claim_texts: List[str] = []
+        newest: Optional[datetime] = None
+        for claim_id in getattr(candidate, "claim_ids", []):
+            claim = await self.store.get_claim(claim_id)
+            if claim is None:
+                continue
+            claim_texts.append(claim.canonical_proposition)
+            if newest is None or claim.first_observed_at > newest:
+                newest = claim.first_observed_at
+            # A quantitative or observational claim is primary evidence.
+            if claim.claim_type.value in ("quantitative", "observational"):
+                facts.primary_evidence_count += 1
+            else:
+                facts.attributed_evidence_count += 1
+        if newest is not None:
+            facts.last_material_update_at = newest
+            facts.material_changes = [MaterialChange(
+                kind=ChangeKind.NEW_EVENT, significance=1.0, occurred_at=newest)]
+        # Each distinct claim is treated as its own source group here; a real
+        # ownership graph would collapse same-owner outlets, but distinct
+        # headlines are distinct observations.
+        facts.independent_source_groups = len(claim_texts)
+        facts.total_source_groups = max(len(claim_texts), 1)
+        return facts
+
+    @staticmethod
+    def _is_boilerplate(candidate: Any) -> bool:
+        """True when a story's claims are feed boilerplate, not news.
+
+        RSS channels emit a description like "Top stories, breaking news, live
+        reporting... follow news topics" that compiles into a claim. These
+        phrases are the tell.
+        """
+        markers = (
+            "top stories", "breaking news", "live reporting",
+            "follow news topics", "news topics that match",
+            "sign up", "subscribe", "download the",
+        )
+        text = (candidate.canonical_title or "").lower()
+        return any(m in text for m in markers)
 
     def _candidate_for(self, story_id: str, candidates: List[Any]
                        ) -> Optional[Any]:

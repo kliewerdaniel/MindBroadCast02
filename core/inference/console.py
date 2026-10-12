@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..broadcast.providers import ProviderError
+from ..inference.autonomous import AutonomousBroadcaster
 from ..inference.providers import OllamaProvider
 from ..inference.qwen3_tts_http import Qwen3TTSHttpProvider
 from ..inference.runtime import LiveRuntime, RuntimeConfig, TranscriptLine
@@ -86,6 +87,12 @@ class ConsoleState:
         self.tts = Qwen3TTSHttpProvider()
         self.runtime = LiveRuntime(self.llm, self.tts,
                                    config=RuntimeConfig(max_segments=0))
+        # The autonomous broadcaster shares the runtime, so both the demo
+        # (typed topics) and the real system (watch a source, decide, speak)
+        # route aired segments through the same on_segment handler.
+        self.autonomous = AutonomousBroadcaster(
+            self.runtime, db_path=str(_SEGMENTS_DIR.parent / "world.db"),
+            on_segment=self.on_segment)
         self.segments: List[Dict[str, Any]] = []   # ordered, playable
         _SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -201,6 +208,63 @@ async def broadcast(topics: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     threading.Thread(target=run_sync, daemon=True).start()
     return {"accepted": True, "topics": len(topics)}
+
+
+@app.post("/api/broadcast/auto")
+async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Run an autonomous cycle: watch a live source, decide, and speak.
+
+    This is the real system — the broadcaster ingests a news feed, compiles it
+    into claims, ranks the stories, picks the top one, and airs it. No typed
+    facts. Body: {"source": "<name>", "endpoint": "<rss url>", "cycles": N}.
+    """
+    global _run_active
+    if not _run_lock.acquire(blocking=False):
+        raise HTTPException(409, "a broadcast is already running")
+
+    health = await state.health()
+    if not all(health.values()):
+        _run_lock.release()
+        raise HTTPException(503, f"providers unavailable: {health}")
+
+    name = body.get("source", "Live Feed")
+    endpoint = body.get("endpoint",
+                        "https://feeds.bbci.co.uk/news/rss.xml")
+    cycles = int(body.get("cycles", 1))
+
+    def run_sync() -> None:
+        global _run_active
+        _run_active = True
+        aired = 0
+        try:
+            loop = asyncio.new_event_loop()
+            source_id = loop.run_until_complete(
+                state.autonomous.register_source(name, endpoint))
+            for _ in range(max(1, cycles)):
+                cycle = loop.run_until_complete(
+                    state.autonomous.run_cycle(source_id))
+                _broadcast({
+                    "type": "cycle",
+                    "articles": cycle.articles_ingested,
+                    "claims": cycle.claims_compiled,
+                    "stories": cycle.stories_ranked,
+                    "story": cycle.chosen_story_title,
+                    "aired": cycle.aired,
+                    "silent_reason": cycle.silent_reason,
+                })
+                if cycle.aired:
+                    aired += 1
+            loop.close()
+            _broadcast({"type": "done", "segments": aired,
+                        "errors": state.runtime.errors})
+        except Exception as error:               # noqa: BLE001
+            _broadcast({"type": "error", "message": str(error)})
+        finally:
+            _run_active = False
+            _run_lock.release()
+
+    threading.Thread(target=run_sync, daemon=True).start()
+    return {"accepted": True, "source": name, "cycles": cycles}
 
 
 @app.get("/", response_class=HTMLResponse)
