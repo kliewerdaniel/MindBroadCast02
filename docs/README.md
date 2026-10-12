@@ -47,6 +47,8 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 | 24 | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | Multi-persona dialogue plan. **Executed.** |
 | 25 | [DECISIONS_PHASE7.md](DECISIONS_PHASE7.md) | ADRs 43–49: decisions taken during Phase 7 implementation. |
 | 26 | [PHASE_7_PLAN.md](PHASE_7_PLAN.md) | Live audience and operator plan. **Executed.** |
+| 27 | [DECISIONS_PHASE8.md](DECISIONS_PHASE8.md) | ADRs 50–56: decisions taken during Phase 8 implementation. |
+| 28 | [PHASE_8_PLAN.md](PHASE_8_PLAN.md) | Reliability and streaming plan. **Executed.** |
 | 17 | [PHASE_2_PLAN.md](PHASE_2_PLAN.md) | Ingestion and source normalization plan. **Executed.** |
 | 14 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
 | 15 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
@@ -58,5 +60,6 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 - `MISSING` — not built.
 - `DEFERRED` — intentionally out of scope for early phases.
 
-**Current status: Phases 0–7 complete — Gates 1–9 MET, 802 tests passing**
+**Current status: Phases 0–8 complete — ALL GATES MET, 903 tests passing**
+The §25 roadmap is complete. Baseline was 49 pass / 27 fail.
 (baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gates 4 and 5 evidence".

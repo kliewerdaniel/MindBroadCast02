@@ -214,6 +214,48 @@ Result: **802 passed, 0 failed** (Phase 6 was 712; Phase 7 added 90)
 
 ---
 
+## Gate 10 evidence (recorded 2026-10-12)
+
+Command: `python3 -m pytest -q`
+Result: **903 passed, 0 failed** (Phase 7 was 802; Phase 8 added 101)
+
+| File | Tests | Covers |
+|---|---|---|
+| test_reliability.py | 101 | §21 observability, §22 crash, §23 resources, §27.4, §28, §30 |
+
+### Gate 10 — extended autonomous operation
+
+| Criterion | Result |
+|---|---|
+| Per-subsystem metrics for all six §21.2 subsystems | MET — derived, not manual |
+| Dashboard reads real subsystem state | MET — health computed from counters |
+| Logs correlated and redact sensitive content | MET — identifiers survive, content redacted |
+| Liveness and readiness distinct; degraded capabilities named | MET |
+| Five §23.2 priority classes; broadcast is P0 | MET |
+| Low-priority work deferred under overload | MET |
+| Redundant updates coalesced; no duplicate segments | MET — idempotency keys |
+| Queues bounded; overload preserves durable input | MET |
+| Cached artifacts have explicit invalidation | MET |
+| Audio reuse gated on full compatibility tuple | MET — version mismatch is a miss |
+| Recovers pending work after simulated kill without duplication | MET |
+| Resource routing defers non-urgent work without silent downgrade | MET |
+| System may remain silent when nothing to add | MET |
+| FILLER disclosed, never fabricated novelty | MET |
+| Improvement loop bounded to reversible parameters | MET |
+| Cannot autonomously weaken factual validation | MET — protected params refused |
+| Improvement evaluated on multiple dimensions | MET — per-dimension, no single score |
+| Audio and metadata transports separate and pluggable | MET |
+| §30 definition-of-done categories each checkable | MET — 5/5 |
+
+### §28.2's hard rule, tested directly
+
+A proposal to reduce `validation_stages` from 8 to 2 — the exact
+"broadcast more by weakening validation" case §28.2 names — is REJECTED, not
+flagged. A novelty gain that regresses factual grounding is rejected regardless
+of the gain, per §28.4's multi-dimension rule.
+
+---
+
 ## Gate 3 evidence (recorded 2026-10-12)
 
 Command: `python3 -m pytest -q`

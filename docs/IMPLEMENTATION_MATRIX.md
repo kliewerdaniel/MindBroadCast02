@@ -178,6 +178,22 @@ only).
 | Live transcript (generated ≠ delivered) | ARCHITECTURE.md §Transcript | 7 | **IMPLEMENTED** — delivery-time entries (ADR-046) |
 | Operator controls (confirm + audit) | ARCHITECTURE.md §Operator | 7 | **IMPLEMENTED** — risk-classified (ADR-047) |
 | Accessibility data contract | ARCHITECTURE.md §Accessibility | 7 | **IMPLEMENTED** — status not color-only |
+
+## Reliability and Operations (§21–§23, §27.4, §28)
+
+| Feature | Reference | Phase | Status |
+|---|---|---|---|
+| Per-subsystem metrics | ARCHITECTURE.md §Metrics | 8 | **IMPLEMENTED** — derived health (§21.5) |
+| Structured redacted logging | ARCHITECTURE.md §Logging | 8 | **IMPLEMENTED** — identifiers survive (§21.3) |
+| Liveness vs readiness | ARCHITECTURE.md §Health | 8 | **IMPLEMENTED** — degraded capabilities named (§21.4) |
+| Priority scheduling (5 classes) | ARCHITECTURE.md §Scheduling | 8 | **IMPLEMENTED** — broadcast is P0 (§23.2) |
+| Backpressure + coalescing | ARCHITECTURE.md §Backpressure | 8 | **IMPLEMENTED** — idempotency keys (§23.3) |
+| Caching with invalidation | ARCHITECTURE.md §Caching | 8 | **IMPLEMENTED** — audio gated on version (§23.4) |
+| Crash recovery | ARCHITECTURE.md §Recovery | 8 | **IMPLEMENTED** — no duplicate replay (§22) |
+| Resource-aware routing | ARCHITECTURE.md §Routing | 8 | **IMPLEMENTED** — never silently downgrades (§23.5) |
+| Continuous operation (permitted silence) | ARCHITECTURE.md §Continuous | 8 | **IMPLEMENTED** — no fabricated novelty (§27.4) |
+| Recursive improvement (bounded) | ARCHITECTURE.md §Improvement | 8 | **IMPLEMENTED** — protected params refused (§28) |
+| Streaming transport seam | ARCHITECTURE.md §Streaming | 8 | **IMPLEMENTED** — audio/metadata separate (§16.8) |
 | Fairness / bias monitoring | EDITORIAL_MODEL.md §Fairness | 4, 8 | MISSING |
 
 ## §11 Editorial control plane
@@ -316,9 +332,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gates 1–9 closed; 85 domain/infrastructure items |
+| IMPLEMENTED | ALL GATES closed; 96 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~24 spec features across 10 subsystems (Phases 8–9) |
+| MISSING | ~15 spec features (optional integrations: live Icecast, real browser frontend, semantic extraction) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 
