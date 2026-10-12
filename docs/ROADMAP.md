@@ -226,6 +226,15 @@ speech synthesis, live transcript, evidence-linked script artifacts.
 synthesize, and deliver short segments **without losing state when an individual
 task fails.**
 
+**Status: COMPLETE — Gates 6 and 7 MET.** 151 broadcast tests; all exit
+criteria verified. Delivered: `core/broadcast/` with the 8-stage script
+validation pipeline (§15.4), capability-declaring LLM/TTS providers (§14.1,
+§16.2), context assembly with an untrusted-content guard (§14.4–14.5), the
+11-state segment lifecycle (§13.3), the stateful director with crash recovery
+(§13.2), interrupt-safe audio with stale-chunk rejection (§13.5, §16.6), and
+append-only post-broadcast correction (§15.7).
+Plan: `docs/PHASE_5_PLAN.md`. Decisions: `docs/DECISIONS_PHASE5.md`.
+
 ---
 
 ## Phase 6: Multiple personas and analytical dialogue

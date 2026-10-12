@@ -129,6 +129,25 @@ only).
 | Explainable selection record | EDITORIAL_MODEL.md §Explainable selection | 4 | **IMPLEMENTED** — structured decision record (§10.11) |
 | Story clustering / story engine | DOMAIN_MODEL.md §5.5.1 | 4 | **IMPLEMENTED** — deterministic, qualifier-aware (ADR-029) |
 | Temporal-leakage-safe replay | TESTING_STRATEGY.md §Layer 9 | 4 | **IMPLEMENTED** — observation-time filter, violations reported |
+
+## Broadcast (§13–§16)
+
+| Feature | Reference | Phase | Status |
+|---|---|---|---|
+| Model-provider abstraction (local-first) | ARCHITECTURE.md §Provider interface | 5 | **IMPLEMENTED** — capability-declaring protocols + stubs |
+| Generation-request contract | ARCHITECTURE.md §Generation request | 5 | **IMPLEMENTED** — idempotency key, versions, deadline |
+| Evidence packet (application-built) | ARCHITECTURE.md §Evidence packet | 5 | **IMPLEMENTED** — `ContextBuilder`, provenance preserved |
+| Context assembly (§14.4) | ARCHITECTURE.md §Context builder | 5 | **IMPLEMENTED** — contradictory evidence always included |
+| Prompt-injection structural controls | ARCHITECTURE.md §Prompt injection | 5 | **IMPLEMENTED** — data delimiters, id validation, blocking |
+| Script validation (8 stages) | ARCHITECTURE.md §Validation pipeline | 5 | **IMPLEMENTED** — 7 deterministic, verifier optional |
+| Epistemic labeling (§15.2) | ARCHITECTURE.md §Epistemic labeling | 5 | **IMPLEMENTED** — internal metadata, 11 categories |
+| Claim provenance (§15.3) | ARCHITECTURE.md §Provenance | 5 | **IMPLEMENTED** — source list is not support |
+| Segment lifecycle (11 states) | STATE_MACHINES.md §Segment | 5 | **IMPLEMENTED** — illegal transitions refused |
+| TTS failure does not invalidate script (§13.3) | STATE_MACHINES.md | 5 | **IMPLEMENTED** — returns to APPROVED |
+| Audio buffer (ordered, bounded, stale-rejecting) | ARCHITECTURE.md §Audio buffer | 5 | **IMPLEMENTED** — byte budget, chunk ordering |
+| Interrupt-safe audio (§13.5) | STATE_MACHINES.md §Interruption | 5 | **IMPLEMENTED** — abandoned audio dropped |
+| Director state + crash recovery (§13.2) | STATE_MACHINES.md §Director | 5 | **IMPLEMENTED** — PLAYING recovers as INTERRUPTED |
+| Post-broadcast correction (§15.7) | EDITORIAL_MODEL.md §Correction | 5 | **IMPLEMENTED** — append-only transcript archive |
 | Fairness / bias monitoring | EDITORIAL_MODEL.md §Fairness | 4, 8 | MISSING |
 
 ## §11 Editorial control plane
@@ -267,9 +286,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gates 1–5 closed; 51 domain/infrastructure items |
+| IMPLEMENTED | Gates 1–7 closed; 65 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~45 spec features across 10 subsystems (Phases 5–9) |
+| MISSING | ~38 spec features across 10 subsystems (Phases 6–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 

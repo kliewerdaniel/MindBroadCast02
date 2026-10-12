@@ -106,6 +106,45 @@ development.
 
 ---
 
+## Gates 6 and 7 evidence (recorded 2026-10-12)
+
+Command: `python3 -m pytest -q`
+Result: **633 passed, 0 failed** (Phase 4 was 482; Phase 5 added 151)
+
+| File | Tests | Covers |
+|---|---|---|
+| test_broadcast.py | 151 | §13 director, §14 LLM orchestration, §15 validation, §16 audio |
+
+### Gate 6 — approved script generation
+
+| Criterion | Result |
+|---|---|
+| A generation request produces a persistent, versioned script | MET — request → `BroadcastScript` v1 with turns |
+| Every substantive statement carries an epistemic function | MET — `EpistemicFunction` set and preserved |
+| A factual claim cannot broadcast without resolving evidence **that supports it** | MET — a source list alone fails stage 2 |
+| All 8 validation stages defined, each catches a failure class | MET — a broken script caught by 3 independent stages |
+| `REJECTED` distinguishes unspeakable content from recoverable problems | MET — polished unsupported allegation → REJECTED |
+| A malicious source cannot redirect the task | MET — injection pattern blocks generation |
+| An unsupported allegation does not pass on polished prose | MET — tested with flowing prose |
+
+### Gate 7 — continuous audio
+
+| Criterion | Result |
+|---|---|
+| Approved segments synthesized in ordered chunks with sequence numbers | MET |
+| Chunks bound to segment + synthesis attempt | MET |
+| A cancelled/superseded generation's chunks never delivered | MET — `StaleChunk` raised |
+| A slow client cannot consume unbounded memory | MET — byte budget raises `BufferFull` |
+| Interrupted speech recorded and cannot replay | MET — audio dropped, history preserved |
+| Generated ≠ validated ≠ submitted ≠ synthesized ≠ buffered ≠ delivered ≠ consumed | MET — 7 distinct `ContentState` values |
+
+### §15.7 Post-broadcast correction
+
+Original transcript preserved byte-identical; correction appended as a second
+archive entry; original marked `superseded_by`, never deleted.
+
+---
+
 ## Gate 3 evidence (recorded 2026-10-12)
 
 Command: `python3 -m pytest -q`
