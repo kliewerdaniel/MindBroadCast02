@@ -39,6 +39,8 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 | 16 | [DECISIONS_PHASE2.md](DECISIONS_PHASE2.md) | ADRs 15–19: decisions taken during Phase 2 implementation. |
 | 17 | [DECISIONS_PHASE3.md](DECISIONS_PHASE3.md) | ADRs 20–25: decisions taken during Phase 3 implementation. |
 | 18 | [PHASE_3_PLAN.md](PHASE_3_PLAN.md) | Knowledge Compiler plan. **Executed.** |
+| 19 | [DECISIONS_PHASE4.md](DECISIONS_PHASE4.md) | ADRs 26–30: decisions taken during Phase 4 implementation. |
+| 20 | [PHASE_4_PLAN.md](PHASE_4_PLAN.md) | World model and story intelligence plan. **Executed.** |
 | 17 | [PHASE_2_PLAN.md](PHASE_2_PLAN.md) | Ingestion and source normalization plan. **Executed.** |
 | 14 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
 | 15 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
@@ -50,5 +52,5 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 - `MISSING` — not built.
 - `DEFERRED` — intentionally out of scope for early phases.
 
-**Current status: Phases 0–3 complete — Gates 1, 2 and 3 MET, 428 tests passing**
-(baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gate 3 evidence".
+**Current status: Phases 0–4 complete — Gates 1–5 MET, 482 tests passing**
+(baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gates 4 and 5 evidence".

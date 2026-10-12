@@ -193,6 +193,13 @@ records, historical replay capability.
 connect them to ongoing stories, and reconstruct what information was available
 at a given point in time — with story selection explainable and reproducible.
 
+**Status: COMPLETE — Gates 4 and 5 MET.** 54 world-model tests; all exit
+criteria verified. Delivered: `core/world_model/` with material change
+detection (§9.2), the nine ranking factors operationally defined (§10),
+coverage debt and non-permanent saturation (§10.8–9), deterministic story
+clustering (§5.5.1), and temporal-leakage-safe replay (§22.7).
+Plan: `docs/PHASE_4_PLAN.md`. Decisions: `docs/DECISIONS_PHASE4.md`.
+
 ---
 
 ## Phase 5: Single-persona broadcasting

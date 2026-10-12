@@ -106,9 +106,9 @@ only).
 
 | Item | Doc | Phase | Status |
 |---|---|---|---|
-| Current vs historical view | DOMAIN_MODEL.md §5.9 | 4 | MISSING |
-| Material change detection | EDITORIAL_MODEL.md §Novelty | 4 | MISSING |
-| Temporal reasoning (6 time signals) | EDITORIAL_MODEL.md §Temporal velocity | 4 | MISSING |
+| Current vs historical view | DOMAIN_MODEL.md §5.9 | 4 | **IMPLEMENTED** — `world_model/replay.py` |
+| Material change detection | EDITORIAL_MODEL.md §Novelty | 4 | **IMPLEMENTED** — `world_model/changes.py`, 10 change kinds |
+| Temporal reasoning (6 time signals) | EDITORIAL_MODEL.md §Temporal velocity | 4 | **IMPLEMENTED** — decays from observation time |
 | Uncertainty attaches where it occurs | EPISTEMIC_INVARIANTS.md I11 | 4 | MISSING |
 | World-state update procedure (9 steps) | PERSISTENCE_AND_EVENTS.md | 4 | MISSING |
 
@@ -116,17 +116,19 @@ only).
 
 | Item | Doc | Phase | Status |
 |---|---|---|---|
-| Ranking function P(s,t) | EDITORIAL_MODEL.md | 4 | MISSING |
-| Importance (not attention) | EDITORIAL_MODEL.md §Importance | 4 | MISSING |
-| Novelty (5 components) | EDITORIAL_MODEL.md §Novelty | 4 | MISSING |
-| Temporal velocity (decay model) | EDITORIAL_MODEL.md §Temporal velocity | 4 | MISSING |
-| Graph centrality (normalized, contextual) | EDITORIAL_MODEL.md §Centrality | 4 | MISSING |
-| Evidence quality classes | EDITORIAL_MODEL.md §Evidence quality | 4 | MISSING |
-| Audience relevance (bounded, no feedback loop) | EDITORIAL_MODEL.md §Audience relevance | 4, 7 | MISSING |
-| Coverage debt | EDITORIAL_MODEL.md §Coverage debt | 4 | MISSING |
-| Coverage saturation | EDITORIAL_MODEL.md §Coverage saturation | 4 | MISSING |
-| Selection objective | EDITORIAL_MODEL.md §Selection objective | 4 | MISSING |
-| Explainable selection record | EDITORIAL_MODEL.md §Explainable selection | 4 | MISSING |
+| Ranking function P(s,t) | EDITORIAL_MODEL.md | 4 | **IMPLEMENTED** — all nine factors + penalties |
+| Importance (not attention) | EDITORIAL_MODEL.md §Importance | 4 | **IMPLEMENTED** — attention explicitly excluded |
+| Novelty (5 components) | EDITORIAL_MODEL.md §Novelty | 4 | **IMPLEMENTED** — measured against world model |
+| Temporal velocity (decay model) | EDITORIAL_MODEL.md §Temporal velocity | 4 | **IMPLEMENTED** — Σ W(d)·exp(−Δt/τ), tau by story type |
+| Graph centrality (normalized, contextual) | EDITORIAL_MODEL.md §Centrality | 4 | **IMPLEMENTED** — normalized, never decisive |
+| Evidence quality classes | EDITORIAL_MODEL.md §Evidence quality | 4 | **IMPLEMENTED** — ownership-group-aware independence |
+| Audience relevance (bounded, no feedback loop) | EDITORIAL_MODEL.md §Audience relevance | 4 | **IMPLEMENTED** — capped additive term (ADR-028) |
+| Coverage debt | EDITORIAL_MODEL.md §Coverage debt | 4 | **IMPLEMENTED** |
+| Coverage saturation | EDITORIAL_MODEL.md §Coverage saturation | 4 | **IMPLEMENTED** — lifts on material change (§10.9) |
+| Selection objective | EDITORIAL_MODEL.md §Selection objective | 4 | **IMPLEMENTED** — greedy net-value ordering |
+| Explainable selection record | EDITORIAL_MODEL.md §Explainable selection | 4 | **IMPLEMENTED** — structured decision record (§10.11) |
+| Story clustering / story engine | DOMAIN_MODEL.md §5.5.1 | 4 | **IMPLEMENTED** — deterministic, qualifier-aware (ADR-029) |
+| Temporal-leakage-safe replay | TESTING_STRATEGY.md §Layer 9 | 4 | **IMPLEMENTED** — observation-time filter, violations reported |
 | Fairness / bias monitoring | EDITORIAL_MODEL.md §Fairness | 4, 8 | MISSING |
 
 ## §11 Editorial control plane
@@ -265,9 +267,9 @@ only).
 
 | Status | Count (approx.) |
 |---|---|
-| IMPLEMENTED | Gates 1–3 closed; 36 domain/infrastructure items |
+| IMPLEMENTED | Gates 1–5 closed; 51 domain/infrastructure items |
 | PARTIAL | ~8 items (provenance traversal, temporal reasoning, observability) |
-| MISSING | ~55 spec features across 11 subsystems (Phases 4–9) |
+| MISSING | ~45 spec features across 10 subsystems (Phases 5–9) |
 | DEFERRED | CKU, recursive improvement, external radio |
 | VIOLATED | 0 — all three prior violations resolved |
 

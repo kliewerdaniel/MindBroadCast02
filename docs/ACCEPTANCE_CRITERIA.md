@@ -14,8 +14,8 @@ remain understandable and recoverable over time.**
 | 1 | Persistence and migrations are reliable. | 1 | **MET** — 253 tests, migration runner + recovery + legacy import verified |
 | 2 | Ingestion and deduplication are idempotent. | 2 | **MET** — 104 ingestion tests; all ten §7.7 criteria verified |
 | 3 | Claims and evidence have traceable provenance. | 3 | **MET** — 71 compiler tests; claim→span→evidence chain verified |
-| 4 | World snapshots preserve consistent historical state. | 4 | PARTIAL — snapshots capture full state with watermark/hash/manifest and an atomic boundary; temporal reasoning and replay are Phase 4 |
-| 5 | Story selection is explainable and reproducible. | 4 | NOT MET |
+| 4 | World snapshots preserve consistent historical state. | 4 | **MET** — replay filters on observation time; leakage reported, not silent |
+| 5 | Story selection is explainable and reproducible. | 4 | **MET** — 54 world-model tests; all nine factors operationally defined |
 | 6 | Generated scripts pass mandatory validation. | 5 | NOT MET |
 | 7 | TTS and audio delivery recover from failures. | 5, 8 | NOT MET |
 | 8 | Corrections propagate to affected claims and broadcasts. | 3, 5 | PARTIAL — corrections are first-class, linked, and preserved; propagation to broadcasts is Phase 5 |
@@ -66,6 +66,45 @@ the corresponding gate closes. The critical ones by gate:
 | 4 | I8, I11 (uncertainty attaches where it occurs) — tested |
 | 5 | I6 (personas cannot override evidence), I7 (multiple outputs ≠ corroboration), I12 (generated ≠ validated ≠ delivered), I13 (multi-mechanism validation) — Phase 5/6 |
 | 7 | I15 (allegation ≠ assertion), I16 (config flags are not enforcement) — Phase 5/7 |
+
+## Gates 4 and 5 evidence (recorded 2026-10-12)
+
+Command: `python3 -m pytest -q`
+Result: **482 passed, 0 failed** (Phase 3 was 428; Phase 4 added 54)
+
+| File | Tests | Covers |
+|---|---|---|
+| test_world_model.py | 54 | §9 change detection, §10 ranking, coverage, clustering, replay |
+
+### Gate 4 — snapshots preserve consistent historical state
+
+| Criterion | Result |
+|---|---|
+| A snapshot at T reconstructs exactly what was known at T | MET — manifest vs. knowable records: 0 violations |
+| Valid, observation, transaction times distinct through replay | MET |
+| Replay to T never includes information first observed after T | MET — future records excluded **and reported** |
+| A change to one claim does not invalidate every story summary | MET — dependency-scoped invalidation |
+
+### Gate 5 — story selection is explainable and reproducible
+
+| Criterion | Result |
+|---|---|
+| All nine ranking factors operationally defined | MET — 8 computed factors + 2 penalties |
+| Novelty measured against the world model, not article text | MET — 25 articles, no material change → novelty 0.0 |
+| Temporal velocity uses material changes, not volume | MET — 50 duplicates → 0.0; 1 development → 0.85 |
+| A late discovery is not ranked as stale | MET — velocity decays from observation time |
+| Coverage saturation lifts on a material change | MET — saturation 1.0 → 0.8 |
+| Every selection carries a recorded rationale with factor values | MET — structured decision record, weight-set id |
+| Audience relevance bounded, cannot override importance | MET — popularity −0.35 vs consequential 3.45 |
+| Same stored state reproduces the same ranking | MET — deterministic, weight-set id recorded |
+
+### The §9.2 distinction, tested directly
+
+Ten articles restating one known claim produce **zero** material changes. Ten
+restatements cluster into **one** story. Article volume never reads as
+development.
+
+---
 
 ## Gate 3 evidence (recorded 2026-10-12)
 

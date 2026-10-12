@@ -2,8 +2,8 @@
 
 A persistent, autonomous, news-driven intelligence and broadcasting system.
 
-**Status:** Phases 0–3 complete. **Gates 1–3 MET.**
-Baseline was 49 passed / 27 failed; now **428 passed / 0 failed**.
+**Status:** Phases 0–4 complete. **Gates 1–5 MET.**
+Baseline was 49 passed / 27 failed; now **482 passed / 0 failed**.
 
 ## What this is
 
@@ -58,7 +58,7 @@ Phase 0  Audit                      ✅ COMPLETE (49 pass / 27 fail baseline)
 Phase 1  Persistence + domain       ✅ COMPLETE — Gate 1 MET
 Phase 2  Ingestion + dedup          ✅ COMPLETE — Gate 2 MET
 Phase 3  Knowledge compilation      ✅ COMPLETE — Gate 3 MET
-Phase 4  World model + stories      ⬜ Gates 4, 5
+Phase 4  World model + stories      ✅ COMPLETE — Gates 4, 5 MET
 Phase 5  Single-persona broadcast   ⬜ Gate 6
 Phase 6  Personas + debate          ⬜
 Phase 7  Audience + operator UI     ⬜ Gate 9
@@ -95,7 +95,8 @@ MindBroadCast02/
     ├── test_recovery.py        24
     ├── test_migrations.py      34
     ├── test_ingestion.py      104
-    └── test_compiler.py        71
+    ├── test_compiler.py        71
+    └── test_world_model.py     54
 ```
 
 Run the suite: `python3 -m pytest -q`
