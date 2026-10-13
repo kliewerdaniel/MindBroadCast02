@@ -20,6 +20,7 @@ inventing a bulletin (§27.4).
 """
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -73,12 +74,49 @@ class AutonomousBroadcaster:
         self.compiler = KnowledgeCompiler(self.store)
         self.story_engine = StoryEngine(self.store)
         self.cycles: List[BroadcastCycle] = []
+        # Durable continuity state (§30 "survives process restarts"): the set
+        # of aired story ids is persisted to a sibling file so a restart does
+        # not re-air. Operational state, not domain data — so a small JSON
+        # file, not a schema migration.
+        self._state_path = self._derive_state_path(db_path)
         # Continuity: claim ids already aired, so a continuous loop never
         # re-broadcasts the same story. Without this, re-clustering all claims
         # each cycle would re-air the top story forever.
         self._aired_claim_ids: set = set()
         self._aired_story_ids: set = set()
         self._stop = False
+        self._load_state()
+
+    def _derive_state_path(self, db_path: str) -> Optional[str]:
+        """A sibling JSON file for continuity state; None for in-memory DBs."""
+        if db_path in (":memory:", ""):
+            return None
+        return db_path + ".aired.json"
+
+    def _load_state(self) -> None:
+        """Restore aired story ids so a restart does not re-air (§30)."""
+        if self._state_path is None:
+            return
+        try:
+            with open(self._state_path) as handle:
+                data = json.load(handle)
+            self._aired_story_ids = set(data.get("aired_story_ids", []))
+            self._aired_claim_ids = set(data.get("aired_claim_ids", []))
+        except (FileNotFoundError, ValueError, OSError):
+            pass    # no prior state — start fresh
+
+    def _save_state(self) -> None:
+        if self._state_path is None:
+            return
+        try:
+            with open(self._state_path, "w") as handle:
+                json.dump({
+                    "aired_story_ids": sorted(self._aired_story_ids),
+                    "aired_claim_ids": sorted(self._aired_claim_ids),
+                }, handle)
+        except OSError:
+            pass    # persistence is best-effort; continuity degrades to
+            # in-memory rather than crashing the broadcast
 
     async def register_source(self, name: str, endpoint: str) -> str:
         source = Source(name=name, endpoint=endpoint,
@@ -209,6 +247,7 @@ class AutonomousBroadcaster:
     def _mark_aired(self, candidate: Any) -> None:
         self._aired_story_ids.add(candidate.story_id)
         self._aired_claim_ids.update(getattr(candidate, "claim_ids", []))
+        self._save_state()
 
     # ── helpers ───────────────────────────────────────────────────────
 
