@@ -267,6 +267,89 @@ async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
     return {"accepted": True, "source": name, "cycles": cycles}
 
 
+# ── The continuous station ───────────────────────────────────────────
+# A long-lived background thread running run_forever with a real poll
+# interval, so the browser can start a self-running station and stop it.
+
+_station: Dict[str, Any] = {"running": False, "thread": None,
+                            "source": None, "endpoint": None,
+                            "poll_seconds": 120.0, "started_at": None}
+
+
+@app.post("/api/station/start")
+async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Start the continuous station: watch a source and air on a loop."""
+    if _station["running"]:
+        raise HTTPException(409, "the station is already running")
+
+    health = await state.health()
+    if not all(health.values()):
+        raise HTTPException(503, f"providers unavailable: {health}")
+
+    name = body.get("source", "BBC News")
+    endpoint = body.get("endpoint", "https://feeds.bbci.co.uk/news/rss.xml")
+    poll = float(body.get("poll_seconds", 120))
+
+    def station_loop() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            source_id = loop.run_until_complete(
+                state.autonomous.register_source(name, endpoint))
+            _broadcast({"type": "station", "state": "on_air",
+                        "source": name})
+            loop.run_until_complete(state.autonomous.run_forever(
+                source_id=source_id, poll_seconds=poll,
+                on_cycle=_on_station_cycle))
+        except Exception as error:               # noqa: BLE001
+            _broadcast({"type": "error", "message": str(error)})
+        finally:
+            loop.close()
+            _station["running"] = False
+            _broadcast({"type": "station", "state": "stopped"})
+
+    _station.update({"running": True, "source": name, "endpoint": endpoint,
+                     "poll_seconds": poll,
+                     "started_at": datetime.now(timezone.utc).isoformat()})
+    thread = threading.Thread(target=station_loop, daemon=True)
+    _station["thread"] = thread
+    thread.start()
+    return {"started": True, "source": name, "poll_seconds": poll}
+
+
+@app.post("/api/station/stop")
+async def station_stop() -> Dict[str, Any]:
+    """Stop the continuous station after the current cycle."""
+    if not _station["running"]:
+        return {"stopped": True, "was_running": False}
+    state.autonomous.stop()
+    return {"stopping": True}
+
+
+@app.get("/api/station")
+async def station_status() -> Dict[str, Any]:
+    return {
+        "running": _station["running"],
+        "source": _station["source"],
+        "poll_seconds": _station["poll_seconds"],
+        "started_at": _station["started_at"],
+        "cycles": len(state.autonomous.cycles),
+        "aired": sum(1 for c in state.autonomous.cycles if c.aired),
+    }
+
+
+def _on_station_cycle(cycle: Any) -> None:
+    """Push each autonomous cycle to SSE subscribers."""
+    _broadcast({
+        "type": "cycle",
+        "articles": cycle.articles_ingested,
+        "claims": cycle.claims_compiled,
+        "stories": cycle.stories_ranked,
+        "story": cycle.chosen_story_title,
+        "aired": cycle.aired,
+        "silent_reason": cycle.silent_reason,
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     index_path = _STATIC / "index.html"

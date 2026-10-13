@@ -7,11 +7,22 @@ const healthDot = document.getElementById("health-dot");
 const healthText = document.getElementById("health-text");
 const demoBtn = document.getElementById("demo-btn");
 const liveBtn = document.getElementById("live-btn");
+const stationBtn = document.getElementById("station-btn");
+const stationDot = document.getElementById("station-dot");
+const stationText = document.getElementById("station-text");
 const cycleInfo = document.getElementById("cycle-info");
 const runState = document.getElementById("run-state");
 
 let queue = [];        // segments waiting to play
 let playing = false;
+let stationRunning = false;
+
+function setStationUI(running) {
+  stationRunning = running;
+  stationBtn.textContent = running ? "Stop the station" : "Start the station";
+  stationDot.className = "dot " + (running ? "ok" : "unknown");
+  stationText.textContent = running ? "station on air" : "station idle";
+}
 
 async function refreshHealth() {
   try {
@@ -71,6 +82,9 @@ function connect() {
       addTranscript(data, false);
       queue.push(data);
       playNext();
+    } else if (data.type === "station") {
+      setStationUI(data.state === "on_air");
+      if (data.state === "on_air") cycleInfo.textContent = "watching " + data.source + "…";
     } else if (data.type === "cycle") {
       // What the system observed and decided this cycle.
       const line = data.aired
@@ -142,6 +156,37 @@ async function goLive() {
   }
 }
 liveBtn.addEventListener("click", goLive);
+
+async function toggleStation() {
+  const url = stationRunning ? "/api/station/stop" : "/api/station/start";
+  const opts = stationRunning
+    ? { method: "POST" }
+    : { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ poll_seconds: 90 }) };
+  try {
+    const res = await fetch(url, opts);
+    if (!stationRunning && res.ok) {
+      setStationUI(true);
+      runState.textContent = "station started";
+    } else if (stationRunning && res.ok) {
+      runState.textContent = "stopping after current cycle…";
+    } else {
+      runState.textContent = "failed: " + res.status;
+    }
+  } catch (e) {
+    runState.textContent = "request failed";
+  }
+}
+stationBtn.addEventListener("click", toggleStation);
+
+// Reflect the server's station state on load.
+(async function syncStation() {
+  try {
+    const res = await fetch("/api/station");
+    const data = await res.json();
+    setStationUI(!!data.running);
+  } catch (e) { /* ignore */ }
+})();
 
 refreshHealth();
 setInterval(refreshHealth, 15000);
