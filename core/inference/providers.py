@@ -70,6 +70,16 @@ def _strip_thinking(text: str) -> str:
                   | re.IGNORECASE).strip()
 
 
+def _looks_like_json(text: str) -> bool:
+    """Whether text carries an extractable JSON object/array.
+
+    Used to decide if a reasoning field is worth treating as the answer. The
+    reasoning trace is prose; only a real JSON payload should stand in for the
+    response.
+    """
+    return _extract_json(text) is not None
+
+
 def _extract_json(text: str) -> Optional[Any]:
     """First balanced JSON object/array, from the first opener.
 
@@ -248,21 +258,31 @@ class OllamaProvider:
         if not prompt:
             raise ProviderError("empty prompt")
 
+        # num_predict must cover BOTH the reasoning trace and the answer:
+        # qwen3:4b on a multi-turn bulletin spends ~8k tokens thinking before
+        # it emits, so a 1024 cap hits done_reason=length with an empty
+        # response and a swallowed answer. 8192 leaves room for thought + JSON.
         payload = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 1024,
+            "options": {"temperature": 0.3, "num_predict": 8192,
                         "think": False},
         }
         data = await asyncio.get_event_loop().run_in_executor(
             None, self._post, "/api/generate", payload)
 
-        # qwen3: answer is in `response` normally, but reasoning models may
-        # return it via `thinking`. Fall back through all fields.
+        # qwen3: answer is normally in `response`, but reasoning models may
+        # return it via `thinking`. Only fall back to `thinking` when it
+        # actually carries a usable JSON object — the reasoning trace itself
+        # is prose, and passing 8k chars of it to the validator as if it were
+        # a script is worse than reporting an honest generation failure.
         text = data.get("response", "") or ""
         if not text:
-            text = data.get("thinking", "") or ""
+            candidate = (data.get("thinking", "")
+                         or data.get("reasoning_content", "") or "")
+            if _looks_like_json(candidate):
+                text = candidate
 
         latency_ms = int((time.monotonic() - started) * 1000)
         return GenerationResult(
@@ -285,18 +305,26 @@ class OllamaProvider:
                 f"{self.provider_id} does not support structured output")
         started = time.monotonic()
         prompt = request.get("prompt") or request.get("objective", "")
+        # num_predict must cover the reasoning trace AND the answer: qwen3:4b
+        # spends ~8k tokens thinking before it emits a multi-turn bulletin, so
+        # a 1024 cap returns an empty response (done_reason=length). This is
+        # the path the orchestrator actually calls, so the budget must live
+        # here, not only in generate().
         payload = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.2, "num_predict": 1024,
+            "options": {"temperature": 0.2, "num_predict": 8192,
                         "think": False},
         }
         data = await asyncio.get_event_loop().run_in_executor(
             None, self._post, "/api/generate", payload)
 
-        text = data.get("response", "") or data.get("thinking", "") or ""
+        text = data.get("response", "") or ""
+        if not text and _looks_like_json(
+                data.get("thinking", "") or data.get("reasoning_content", "")):
+            text = data.get("thinking", "") or data.get("reasoning_content", "")
         structured = _extract_json(text)
         structured = _coerce_to_schema(structured, schema)
         latency_ms = int((time.monotonic() - started) * 1000)

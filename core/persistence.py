@@ -1287,6 +1287,25 @@ class WorldStore:
         conn = self.db.connect()
         return conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
 
+    async def claim_article_ids(self) -> Dict[str, str]:
+        """Map claim_id -> the article it was observed in, via evidence.
+
+        A claim carries no article column; the durable link is
+        claim -> claim_evidence -> evidence.article_id (§5.6/§5.7). Returns the
+        first observed article per claim (a claim corroborated by several
+        articles is attributed to one for clustering). Used to keep facts from
+        a single article in one story.
+        """
+        conn = self.db.connect()
+        rows = conn.execute(
+            "SELECT ce.claim_id, MIN(e.article_id) "
+            "FROM claim_evidence ce "
+            "JOIN evidence e ON e.id = ce.evidence_id "
+            "WHERE e.article_id IS NOT NULL "
+            "GROUP BY ce.claim_id"
+        ).fetchall()
+        return {r[0]: r[1] for r in rows if r[1]}
+
     async def set_claim_status(
         self, claim_id: str, status: ClaimStatus, reason: str = ""
     ) -> ClaimStatus:

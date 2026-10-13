@@ -36,6 +36,7 @@ from ..models import (
 )
 from ..persistence import WorldStore
 from .adapters import FeedAdapter, NormalizedEntry, AdapterError
+from .body import enrich_with_body
 from .canonicalization import (
     canonicalize_url, CanonicalizationPolicy, CanonicalizationResult,
     content_hash as hash_text,
@@ -233,6 +234,17 @@ class IngestionPipeline:
         candidate: DuplicateCandidate,
         digest: str,
     ) -> IngestOutcome:
+        # Enrich with the full article body when we can reach it (longform):
+        # the RSS summary is one sentence; the article is prose the compiler
+        # can turn into multiple claims. Fail-soft — on any failure we keep
+        # the summary. Dedup still keys on the summary text (§7.5 unchanged).
+        body_text = None
+        try:
+            body_text = await enrich_with_body(self.fetcher, entry.link)
+        except Exception:
+            body_text = None
+        normalized = body_text or entry.content or entry.summary
+
         article = Article(
             source_id=source.id,
             canonical_url=canonical.canonical_url,
@@ -245,12 +257,13 @@ class IngestionPipeline:
             source_updated_at=entry.updated_at,
             language=entry.language or "en",
             content_hash=digest,
-            normalized_text=entry.content or entry.summary,
+            normalized_text=normalized,
             extraction_status=ExtractionStatus.SUCCEEDED,
             metadata_json={
                 "guid": entry.guid,
                 "canonicalization": canonical.to_dict(),
                 "categories": entry.categories,
+                "body_enriched": body_text is not None,
             },
         )
         return await self._store_article(article, source, entry, canonical,

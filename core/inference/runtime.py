@@ -155,15 +155,42 @@ class LiveRuntime:
         request = self.generator.make_request(
             task_type="script_generation", segment_id=segment_id,
             evidence_packet=packet, persona_id=self.config.persona_id)
-        # The JSON example must show a CONCRETE value, not a placeholder —
-        # a real model copies `<the sentence>` verbatim if that is what the
+        # The JSON example must show a CONCRETE value, not a placeholder — a
+        # real model copies `<the sentence>` verbatim if that is what the
         # example contains. Use a filled example built from the first fact.
         example_fact = facts[0] if facts else objective
-        prompt = (f"{objective}{facts_block}\n\n"
-                  f"Write one short spoken sentence reporting the fact. "
-                  f'Respond with JSON like this example: '
-                  f'{{"turns":[{{"sequence":1,"text":"{example_fact}",'
-                  f'"speech_act":"factual_report"}}]}}')
+        # Longform: when a story carries several grounded facts, compose a
+        # multi-turn bulletin (lead -> detail -> context) rather than a single
+        # clipped sentence. The validator already bounds turns and per-turn
+        # duration (§15.4 stages 1 and 8), so richer output stays within
+        # limits. With one fact, keep the tight single-sentence report.
+        longform = len(facts) >= 2
+        if longform:
+            prompt = (
+                f"{objective}{facts_block}\n\n"
+                f"You are a news presenter writing a spoken bulletin. "
+                f"Compose a short multi-turn script using ONLY the facts "
+                f"above:\n"
+                f"- Turn 1: a one-sentence lead that opens the story.\n"
+                f"- Turns 2-{min(len(facts), 6)}: one sentence each adding "
+                f"detail, each grounded in a distinct fact above.\n"
+                f"- Final turn: a one-sentence close that says where the "
+                f"story stands.\n"
+                f"Do not invent facts. Vary the openings of sentences so it "
+                f"reads as spoken narration, not a list.\n"
+                f"Respond with JSON like this example:\n"
+                f'{{"turns":['
+                f'{{"sequence":1,"text":"{example_fact}",'
+                f'"speech_act":"factual_report"}},'
+                f'{{"sequence":2,"text":"{example_fact}",'
+                f'"speech_act":"analysis"}}'
+                f']}}')
+        else:
+            prompt = (f"{objective}{facts_block}\n\n"
+                      f"Write one short spoken sentence reporting the fact. "
+                      f'Respond with JSON like this example: '
+                      f'{{"turns":[{{"sequence":1,"text":"{example_fact}",'
+                      f'"speech_act":"factual_report"}}]}}')
         outcome = await self.generator.generate(
             request, objective=prompt, schema=self.config.script_schema)
         if not outcome.succeeded or outcome.script is None:

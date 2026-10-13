@@ -274,6 +274,9 @@ class AutonomousBroadcaster:
     async def _claim_records(self) -> List[Any]:
         from ..world_model.stories import ClaimRecord
         claims = await self.store.list_claims()
+        # Claims carry no article column; derive it via the evidence join so
+        # facts from one article cluster into one story.
+        article_of = await self.store.claim_article_ids()
         records = []
         for claim in claims:
             records.append(ClaimRecord(
@@ -282,6 +285,7 @@ class AutonomousBroadcaster:
                 claim_type=claim.claim_type.value,
                 epistemic_status=claim.epistemic_status.value,
                 first_observed_at=claim.first_observed_at,
+                source_article_id=article_of.get(claim.id),
             ))
         return records
 

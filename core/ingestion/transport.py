@@ -37,12 +37,18 @@ class AiohttpTransport:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers,
                                        allow_redirects=False) as response:
+                    # Resolve the charset BEFORE consuming the body: aiohttp's
+                    # get_encoding() raises "Cannot compute fallback encoding
+                    # of a not yet read body" once content.read() has drained
+                    # the stream and no charset was advertised (BBC article
+                    # pages). Fall back to utf-8.
+                    charset = (response.charset or "utf-8")
                     # Read at most max_body_bytes + 1 so an oversized body is
                     # detectable rather than silently truncated.
                     body_bytes = await response.content.read(
                         self.max_body_bytes + 1)
                     body = body_bytes[:self.max_body_bytes].decode(
-                        response.get_encoding() or "utf-8", errors="replace")
+                        charset, errors="replace")
                     # Content-Length is a header string; the fetcher's size
                     # policy compares it against an int limit, so coerce it.
                     declared = response.headers.get("Content-Length")

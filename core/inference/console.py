@@ -229,7 +229,7 @@ async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
 
     name = body.get("source", "Live Feed")
     endpoint = body.get("endpoint",
-                        "https://feeds.bbci.co.uk/news/rss.xml")
+                        "https://feeds.npr.org/1001/rss.xml")
     cycles = int(body.get("cycles", 1))
 
     def run_sync() -> None:
@@ -286,8 +286,12 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     if not all(health.values()):
         raise HTTPException(503, f"providers unavailable: {health}")
 
-    name = body.get("source", "BBC News")
-    endpoint = body.get("endpoint", "https://feeds.bbci.co.uk/news/rss.xml")
+    # Default to NPR: it ships full article text in the feed, which the
+    # compiler turns into multiple claims per story — the basis for longform.
+    # BBC's feed carries only a one-line summary per entry (article pages are
+    # client-rendered), so it can only ever yield one-sentence broadcasts.
+    name = body.get("source", "NPR News")
+    endpoint = body.get("endpoint", "https://feeds.npr.org/1001/rss.xml")
     poll = float(body.get("poll_seconds", 120))
     # Optional multi-source: a list of {source, endpoint} registers several
     # feeds and runs the loop unpinned so it rotates across them (§3).

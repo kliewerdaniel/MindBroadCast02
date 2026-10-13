@@ -37,6 +37,11 @@ class ClaimRecord:
     entities: List[str] = field(default_factory=list)
     first_observed_at: Optional[datetime] = None
     corrected_by: Optional[str] = None
+    # The article this claim was extracted from. Facts drawn from one article
+    # describe the same development, so shared source is a clustering signal
+    # (§8): without it, a multi-fact article fragments into N one-claim stories
+    # and the broadcast stays a single sentence.
+    source_article_id: Optional[str] = None
 
 
 @dataclass
@@ -88,8 +93,25 @@ class StoryEngine:
     def cluster(self, claims: List[ClaimRecord]) -> List[StoryCandidate]:
         """Group claims into story candidates by shared identity or entities."""
         candidates: List[StoryCandidate] = []
+        # Fast path: claims from the same source article describe one
+        # development, so they cluster together regardless of identity/entity
+        # overlap. Without this, a full-text article's several facts fragment
+        # into separate one-claim stories.
+        by_article: Dict[str, StoryCandidate] = {}
         for claim in claims:
             key = _identity_key(claim)
+            art = claim.source_article_id
+            if art is not None and art in by_article:
+                existing = by_article[art]
+                existing.claim_ids.append(claim.claim_id)
+                existing.entity_names |= set(claim.entities)
+                existing.identity_keys.add(key)
+                if (claim.first_observed_at and
+                        (existing.last_material_update_at is None
+                         or claim.first_observed_at
+                         > existing.last_material_update_at)):
+                    existing.last_material_update_at = claim.first_observed_at
+                continue
             candidate = StoryCandidate(
                 story_id=f"candidate-{key[:12]}",
                 canonical_title=claim.proposition[:120],
@@ -98,6 +120,8 @@ class StoryEngine:
                 identity_keys={key},
                 last_material_update_at=claim.first_observed_at,
             )
+            if art is not None:
+                by_article[art] = candidate
             merged = False
             for existing in candidates:
                 if candidate.overlaps(existing):
