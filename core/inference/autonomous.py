@@ -355,10 +355,21 @@ class AutonomousBroadcaster:
             return None
         claims = []
         facts = []
+        seen: set = set()
         for claim_id in candidate.claim_ids:
             claim = await self.store.get_claim(claim_id)
             if claim is None:
                 continue
+            # Deduplicate near-identical propositions before they reach the
+            # prompt. The compiler can extract the same sentence more than
+            # once, and a strict one-turn-per-fact prompt would then rewrite
+            # the duplicate — producing the same sentence spoken two or three
+            # times. Key on normalized text so only genuinely distinct facts
+            # become turns.
+            key = _normalize_proposition(claim.canonical_proposition)
+            if key in seen:
+                continue
+            seen.add(key)
             claims.append(claim_id)
             facts.append(claim.canonical_proposition)
         if not facts:
@@ -376,3 +387,16 @@ class _Rec:
     """A minimal record with an id, for the context builder."""
     def __init__(self, id: str):
         self.id = id
+
+
+def _normalize_proposition(text: str) -> str:
+    """Collapse a proposition to a dedup key: lowercase alphanumeric words.
+
+    Two claims about the same fact in different surface wording (e.g. a
+    trailing article credit, or the same clause re-emitted by the compiler)
+    normalize to the same key and are treated as one fact. Deliberately
+    coarse: for broadcast we would rather drop a borderline duplicate than
+    speak the same sentence twice.
+    """
+    import re
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))

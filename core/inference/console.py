@@ -83,7 +83,8 @@ class ConsoleState:
     """Holds the runtime and the ordered list of aired segments."""
 
     def __init__(self) -> None:
-        self.llm = OllamaProvider(model=os.environ.get("MBS_MODEL", "qwen3:4b"))
+        self.llm = OllamaProvider(model=os.environ.get(
+            "MBS_MODEL", "qwen3:30b-a3b"))
         self.tts = Qwen3TTSHttpProvider()
         self.runtime = LiveRuntime(self.llm, self.tts,
                                    config=RuntimeConfig(max_segments=0))

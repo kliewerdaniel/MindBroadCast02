@@ -159,31 +159,32 @@ class LiveRuntime:
         # real model copies `<the sentence>` verbatim if that is what the
         # example contains. Use a filled example built from the first fact.
         example_fact = facts[0] if facts else objective
-        # Longform: when a story carries several grounded facts, compose a
-        # multi-turn bulletin (lead -> detail -> context) rather than a single
-        # clipped sentence. The validator already bounds turns and per-turn
-        # duration (§15.4 stages 1 and 8), so richer output stays within
-        # limits. With one fact, keep the tight single-sentence report.
+        # Longform, strictly grounded: rewrite each fact as one spoken turn,
+        # in order, adding nothing. An open-ended "compose a bulletin" prompt
+        # invites the model to pad (restating the lead) and to invent detail —
+        # measured directly: open composition repeated at 0.26-0.40 and
+        # fabricated roles/dates; strict per-fact rewriting gave clean 1:1
+        # turns with no repetition and no invention. qwen3:30b-a3b handles it
+        # well; qwen3:4b fails the strict format, so the model matters too.
+        # With one fact, keep the tight single-sentence report.
         longform = len(facts) >= 2
         if longform:
+            numbered = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(facts))
             prompt = (
-                f"{objective}{facts_block}\n\n"
-                f"You are a news presenter writing a spoken bulletin. "
-                f"Compose a short multi-turn script using ONLY the facts "
-                f"above:\n"
-                f"- Turn 1: a one-sentence lead that opens the story.\n"
-                f"- Turns 2-{min(len(facts), 6)}: one sentence each adding "
-                f"detail, each grounded in a distinct fact above.\n"
-                f"- Final turn: a one-sentence close that says where the "
-                f"story stands.\n"
-                f"Do not invent facts. Vary the openings of sentences so it "
-                f"reads as spoken narration, not a list.\n"
-                f"Respond with JSON like this example:\n"
+                f"Rewrite each numbered fact below as one clear spoken "
+                f"sentence for a news broadcast.\n"
+                f"Rules: output exactly one turn per fact, in the same order. "
+                f"Use ONLY the information in that fact. Do not add names, "
+                f"roles, dates, or details that are not in the fact. Do not "
+                f"repeat a fact. Vary sentence openings so it reads as "
+                f"narration, not a list.\n\n"
+                f"Facts:\n{numbered}\n\n"
+                f"Respond with JSON like this example (one turn per fact):\n"
                 f'{{"turns":['
                 f'{{"sequence":1,"text":"{example_fact}",'
                 f'"speech_act":"factual_report"}},'
-                f'{{"sequence":2,"text":"{example_fact}",'
-                f'"speech_act":"analysis"}}'
+                f'{{"sequence":2,"text":"<fact 2 rewritten>",'
+                f'"speech_act":"factual_report"}}'
                 f']}}')
         else:
             prompt = (f"{objective}{facts_block}\n\n"
