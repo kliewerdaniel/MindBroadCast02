@@ -38,6 +38,7 @@ from ..broadcast.providers import (
 )
 from ..broadcast.validation import ScriptValidator
 from ..world_model.ranking import StoryFacts, StoryRanker
+from .editor import EditorialComposer
 
 
 @dataclass
@@ -81,6 +82,7 @@ class LiveRuntime:
         self.director = director or BroadcastDirector()
         self.generator = GenerationOrchestrator(self.llm)
         self.context_builder = ContextBuilder()
+        self.editor = EditorialComposer(llm=self.llm)
         self.transcript: List[TranscriptLine] = []
         self.segments_produced = 0
         self.errors: List[str] = []
@@ -159,33 +161,16 @@ class LiveRuntime:
         # real model copies `<the sentence>` verbatim if that is what the
         # example contains. Use a filled example built from the first fact.
         example_fact = facts[0] if facts else objective
-        # Longform, strictly grounded: rewrite each fact as one spoken turn,
-        # in order, adding nothing. An open-ended "compose a bulletin" prompt
-        # invites the model to pad (restating the lead) and to invent detail —
-        # measured directly: open composition repeated at 0.26-0.40 and
-        # fabricated roles/dates; strict per-fact rewriting gave clean 1:1
-        # turns with no repetition and no invention. qwen3:30b-a3b handles it
-        # well; qwen3:4b fails the strict format, so the model matters too.
-        # With one fact, keep the tight single-sentence report.
+        # Longform via the editor agent: an LLM-driven structuring pass that
+        # orders and connects the grounded facts into a real bulletin
+        # (newsworthy lead -> detail -> close) instead of a flat per-fact
+        # rewrite. It is still strictly grounded — every emitted turn is
+        # checked against the source facts by EditorialComposer, and anything
+        # unsupported is dropped (§14.3/§22.2). With one fact, the tight
+        # single-sentence report is all there is to say.
         longform = len(facts) >= 2
         if longform:
-            numbered = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(facts))
-            prompt = (
-                f"Rewrite each numbered fact below as one clear spoken "
-                f"sentence for a news broadcast.\n"
-                f"Rules: output exactly one turn per fact, in the same order. "
-                f"Use ONLY the information in that fact. Do not add names, "
-                f"roles, dates, or details that are not in the fact. Do not "
-                f"repeat a fact. Vary sentence openings so it reads as "
-                f"narration, not a list.\n\n"
-                f"Facts:\n{numbered}\n\n"
-                f"Respond with JSON like this example (one turn per fact):\n"
-                f'{{"turns":['
-                f'{{"sequence":1,"text":"{example_fact}",'
-                f'"speech_act":"factual_report"}},'
-                f'{{"sequence":2,"text":"<fact 2 rewritten>",'
-                f'"speech_act":"factual_report"}}'
-                f']}}')
+            prompt = self.editor.build_prompt(facts)
         else:
             prompt = (f"{objective}{facts_block}\n\n"
                       f"Write one short spoken sentence reporting the fact. "
@@ -201,6 +186,29 @@ class LiveRuntime:
             return None
 
         script = outcome.script
+        # Editorial grounding floor (§14.3/§22.2): for a composed longform
+        # bulletin, the editor may structure and connect the facts but may not
+        # introduce anything unsupported. Run every turn through the
+        # deterministic verifier against the source facts and drop any turn
+        # that invents content. If nothing survives, the segment is cancelled
+        # rather than airing an unsupported claim — the model proposes, the
+        # verifier decides. Single-fact reports skip this (they are the fact).
+        if longform and facts:
+            from .editor import GroundingVerifier
+            verifier = GroundingVerifier(facts)
+            kept = [t for t in script.turns
+                    if verifier.is_grounded(t.text)]
+            dropped = len(script.turns) - len(kept)
+            if dropped:
+                self.errors.append(
+                    f"{segment_id}: editor dropped {dropped} ungrounded "
+                    f"turn(s)")
+            if not kept:
+                self.errors.append(
+                    f"{segment_id}: no grounded turns survived; not airing")
+                self.director.advance(segment_id, SegmentStatus.CANCELLED)
+                return None
+            script.turns = kept
         # Ensure each turn has a speaker for delivery validation (stage 8),
         # and carries the evidence-packet references so a factual claim is
         # grounded (§15.3) rather than refused for lacking provenance.
