@@ -48,23 +48,33 @@ class DialogueComposer:
         by_persona: Dict[str, PersonaAnalysis] = {
             a.persona_id: a for a in analyses}
 
+        # A persona's position airs once, even if it appears in several
+        # pairwise disagreements — otherwise the same sentence is spoken two or
+        # three times as the debate is read out. The disagreement is still
+        # recorded (disagreements_addressed); only the spoken turn is deduped.
+        spoken: set = set()
+
         for disagreement in substantive:
             if len(exchange.turns) >= self.max_turns:
                 break
             exchange.disagreements_addressed.append(disagreement.id)
 
-            exchange.turns.append(DialogueTurn(
-                persona_id=disagreement.persona_a_id,
-                text=disagreement.position_a,
-                addresses_disagreement_id=disagreement.id,
-                speech_act="position",
-            ))
-            exchange.turns.append(DialogueTurn(
-                persona_id=disagreement.persona_b_id,
-                text=disagreement.position_b,
-                addresses_disagreement_id=disagreement.id,
-                speech_act="position",
-            ))
+            for pid, text in (
+                (disagreement.persona_a_id, disagreement.position_a),
+                (disagreement.persona_b_id, disagreement.position_b),
+            ):
+                key = (pid, text.strip())
+                if not text.strip() or key in spoken:
+                    continue
+                spoken.add(key)
+                if len(exchange.turns) >= self.max_turns:
+                    break
+                exchange.turns.append(DialogueTurn(
+                    persona_id=pid,
+                    text=text,
+                    addresses_disagreement_id=disagreement.id,
+                    speech_act="position",
+                ))
 
         # Personas with no recorded disagreement still contributed an analysis.
         # They appear so the exchange is not silently narrowed to the debaters.
@@ -82,11 +92,15 @@ class DialogueComposer:
                 speech_act="contribution",
             ))
 
-        # §12.5: unresolved stays unresolved.
-        exchange.unresolved = [
-            d.proposition for d in substantive
-            if d.resolution_status is ResolutionStatus.UNRESOLVED
-        ]
+        # §12.5: unresolved stays unresolved. Deduped — several pairwise
+        # disagreements often share one proposition (the question under
+        # debate), and listing it twice reads as a stutter on air.
+        seen_unresolved: set = set()
+        for d in substantive:
+            if (d.resolution_status is ResolutionStatus.UNRESOLVED
+                    and d.proposition not in seen_unresolved):
+                seen_unresolved.add(d.proposition)
+                exchange.unresolved.append(d.proposition)
         return exchange
 
     def resolve(

@@ -413,6 +413,47 @@ class TestStructuredExchange:
                 assert turn.addresses_disagreement_id in (
                     exchange.disagreements_addressed)
 
+    def test_position_aired_once_across_multiple_disagreements(self):
+        """A persona in several pairwise disagreements speaks once, not per pair.
+
+        With three personas all disagreeing, each position participates in
+        multiple pairwise disagreements; reading each out would stutter. The
+        disagreement is still recorded; only the spoken turn is deduped.
+        """
+        composer = DialogueComposer()
+        pkt = packet(question="Adopt?")
+        analyses = [
+            analysis("a", "Adopt it now, decisively."),
+            analysis("b", "Reject it entirely, no exceptions."),
+            analysis("c", "Delay pending more evidence gathering."),
+        ]
+        disagreements = DisagreementDetector().detect(analyses, pkt)
+        exchange = composer.compose(pkt, analyses, disagreements)
+        # Every disagreement is addressed in the record...
+        assert len(exchange.disagreements_addressed) == len(disagreements)
+        # ...but no (persona, text) spoken twice.
+        spoken = [(t.persona_id, t.text) for t in exchange.turns
+                  if t.speech_act == "position"]
+        assert len(spoken) == len(set(spoken))
+        # Each persona's position appears exactly once.
+        for pid in ("a", "b", "c"):
+            assert sum(1 for t in exchange.turns
+                       if t.persona_id == pid
+                       and t.speech_act == "position") == 1
+
+    def test_unresolved_deduped(self):
+        """Shared propositions are listed once, not once per disagreement."""
+        composer = DialogueComposer()
+        pkt = packet(question="Adopt?")
+        analyses = [
+            analysis("a", "Adopt it now, decisively."),
+            analysis("b", "Reject it entirely, no exceptions."),
+            analysis("c", "Delay pending more evidence gathering."),
+        ]
+        disagreements = DisagreementDetector().detect(analyses, pkt)
+        exchange = composer.compose(pkt, analyses, disagreements)
+        assert len(exchange.unresolved) == len(set(exchange.unresolved))
+
     def test_exchange_carries_shared_facts(self):
         composer = DialogueComposer()
         pkt = packet(facts=["The policy reduces emissions."])

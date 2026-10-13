@@ -273,6 +273,46 @@ class LiveRuntime:
             segment_id=segment_id, delivered=True,
             duration_ms=synth.duration_ms)
 
+    def compose_dialogue(
+        self, objective: str, facts: List[str],
+        lenses: Optional[List[Any]] = None,
+    ) -> Optional[Any]:
+        """Run the §12.4 multi-persona sequence and return a validated script.
+
+        Three or more personas independently read the same grounded facts
+        through distinct lenses; the disagreement guard decides whether there
+        is real divergence worth airing (§12.5). If the evidence supports a
+        straightforward conclusion, disagreement is suppressed and this returns
+        None — the caller falls back to the single-voice editor rather than
+        manufacturing debate. Personas never re-decide facts (§12.3); they only
+        shape significance, mechanism, and implication.
+
+        This is the multi-agent layer above the editor: the editor structures
+        one voice, this surfaces genuine analytical disagreement between voices.
+        """
+        from ..personas.analysis import SharedEvidencePacket
+        from ..personas.dialogue_orchestrator import DialogueOrchestrator
+        from ..personas.llm_analysis import LLMAnalysisFactory
+        from ..personas.memory import PersonaRegistry
+
+        if len(facts) < 2:
+            return None                     # nothing to disagree about
+
+        packet = SharedEvidencePacket(
+            question=objective, facts=list(facts),
+            evidence_references=[])
+        registry = PersonaRegistry()
+        orchestrator = DialogueOrchestrator(registry)
+        factory = LLMAnalysisFactory(self.llm)
+        persona_ids = factory.register(registry, orchestrator.runner, lenses)
+        outcome = orchestrator.run(packet, persona_ids)
+
+        if outcome.suppressed or not outcome.succeeded:
+            reason = outcome.suppression_reason or "dialogue not approved"
+            self.errors.append(f"dialogue suppressed: {reason}")
+            return None
+        return outcome.script
+
     def summary(self) -> Dict[str, Any]:
         return {
             "segments_produced": self.segments_produced,
