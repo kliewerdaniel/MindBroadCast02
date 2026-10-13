@@ -84,6 +84,7 @@ class AutonomousBroadcaster:
         # each cycle would re-air the top story forever.
         self._aired_claim_ids: set = set()
         self._aired_story_ids: set = set()
+        self._source_cursor: int = 0
         self._stop = False
         self._load_state()
 
@@ -254,8 +255,15 @@ class AutonomousBroadcaster:
     async def _pick_source(self, source_id: Optional[str]) -> Optional[Source]:
         if source_id:
             return await self.store.get_source(source_id)
+        # Not pinned: rotate through enabled sources so a multi-source
+        # station actually ingests from all of them across cycles, rather
+        # than starving every source after the first (§3 multi-source).
         sources = await self.store.list_sources(enabled_only=True)
-        return sources[0] if sources else None
+        if not sources:
+            return None
+        chosen = sources[self._source_cursor % len(sources)]
+        self._source_cursor += 1
+        return chosen
 
     async def _recent_articles(self, source_id: str, limit: int
                                ) -> List[Any]:

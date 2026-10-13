@@ -289,16 +289,25 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     name = body.get("source", "BBC News")
     endpoint = body.get("endpoint", "https://feeds.bbci.co.uk/news/rss.xml")
     poll = float(body.get("poll_seconds", 120))
+    # Optional multi-source: a list of {source, endpoint} registers several
+    # feeds and runs the loop unpinned so it rotates across them (§3).
+    extra = body.get("sources") or []
 
     def station_loop() -> None:
         loop = asyncio.new_event_loop()
         try:
-            source_id = loop.run_until_complete(
+            loop.run_until_complete(
                 state.autonomous.register_source(name, endpoint))
+            for item in extra:
+                loop.run_until_complete(state.autonomous.register_source(
+                    item.get("source", item.get("name", "source")),
+                    item.get("endpoint", "")))
+            # Unpinned: run_forever rotates across all enabled sources.
+            source_label = name if not extra else f"{name} +{len(extra)}"
             _broadcast({"type": "station", "state": "on_air",
-                        "source": name})
+                        "source": source_label})
             loop.run_until_complete(state.autonomous.run_forever(
-                source_id=source_id, poll_seconds=poll,
+                source_id=None, poll_seconds=poll,
                 on_cycle=_on_station_cycle))
         except Exception as error:               # noqa: BLE001
             _broadcast({"type": "error", "message": str(error)})
@@ -313,7 +322,8 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     thread = threading.Thread(target=station_loop, daemon=True)
     _station["thread"] = thread
     thread.start()
-    return {"started": True, "source": name, "poll_seconds": poll}
+    return {"started": True, "source": name, "sources": 1 + len(extra),
+            "poll_seconds": poll}
 
 
 @app.post("/api/station/stop")
