@@ -46,9 +46,10 @@ class FakeLLM:
 
     def _post(self, path, payload):
         self.prompts.append(payload["prompt"])
-        # Pick a response by which lens wording appears in the prompt.
+        # Match by persona name — the prompt always opens "You are {name}",
+        # so this is robust regardless of the lens emphasis/questions wording.
         for key, obj in self.per_lens.items():
-            if key in payload["prompt"]:
+            if key.lower() in payload["prompt"].lower():
                 return {"response": json.dumps(obj)}
         return {"response": "{}"}
 
@@ -76,14 +77,16 @@ def test_extract_json_none():
 def test_make_function_produces_persona_analysis():
     lens = PersonaLens(persona_id="analyst", name="Analyst",
                        emphasis="mechanisms")
-    llm = FakeLLM({"Analyst": {"position": "a mechanism reading",
-                               "assumptions": ["x"],
-                               "confidence": 0.8}})
+    llm = FakeLLM({"Analyst": {
+        "position": "She worked for a Trump company and raised her profile "
+                    "on Fox News.",
+        "assumptions": ["x"], "confidence": 0.8}})
     factory = LLMAnalysisFactory(llm)
     config = PersonaConfig(id="analyst", name="Analyst")
     analysis = factory.make_function(lens)(config, PACKET)
     assert analysis.persona_id == "analyst"
-    assert analysis.position == "a mechanism reading"
+    assert analysis.position == ("She worked for a Trump company and raised "
+                                 "her profile on Fox News.")
     assert analysis.assumptions == ["x"]
     assert analysis.confidence == 0.8
     # §12.3: the persona accepts the shared facts, does not re-decide them.
@@ -120,16 +123,49 @@ def test_empty_model_output_is_honest():
     assert a.confidence == 0.5
 
 
+def test_ungrounded_position_is_dropped():
+    """§12.3 floor: a persona that invents facts does not participate.
+
+    The historian live-run cited named 2016 figures absent from the facts.
+    The prompt is not enough — a deterministic check drops the position so it
+    cannot air.
+    """
+    lens = PersonaLens(persona_id="historian", name="Historian")
+    llm = FakeLLM({"Historian": {
+        "position": "This mirrors Kellyanne Conway's 2016 appointment and "
+                    "Sean Hannity's influence.",
+        "assumptions": [], "confidence": 0.8}})
+    factory = LLMAnalysisFactory(llm)
+    a = factory.make_function(lens)(PersonaConfig(id="historian"), PACKET)
+    assert a.position == ""               # dropped, not aired
+    assert a.confidence == 0.0
+    assert any("dropped" in x for x in a.assumptions)
+    # The shared facts are still recorded as accepted.
+    assert a.shared_facts_accepted == list(PACKET.facts)
+
+
+def test_grounded_position_is_kept():
+    lens = PersonaLens(persona_id="analyst", name="Analyst")
+    llm = FakeLLM({"Analyst": {
+        "position": "She raised her profile on Fox News and amplified "
+                    "conspiracy theories on social media.",
+        "assumptions": [], "confidence": 0.7}})
+    factory = LLMAnalysisFactory(llm)
+    a = factory.make_function(lens)(PersonaConfig(id="analyst"), PACKET)
+    assert a.position.startswith("She raised her profile")
+    assert a.confidence == 0.7
+
+
 # ── registration into the §12.4 sequence ─────────────────────────────
 
 def test_register_wires_registry_and_runner():
     per_lens = {
-        "Analyst": {"position": "mechanism", "assumptions": [],
-                    "confidence": 0.6},
-        "Skeptic": {"position": "unproven", "assumptions": [],
-                    "confidence": 0.6},
-        "Historian": {"position": "a pattern", "assumptions": [],
-                      "confidence": 0.6},
+        "Analyst": {"position": "She raised her profile on Fox News.",
+                    "assumptions": [], "confidence": 0.6},
+        "Skeptic": {"position": "The link to her role is speculative.",
+                    "assumptions": [], "confidence": 0.6},
+        "Historian": {"position": "This follows an established pattern.",
+                      "assumptions": [], "confidence": 0.6},
     }
     factory = _factory(per_lens)
     registry = PersonaRegistry()
@@ -143,13 +179,16 @@ def test_register_wires_registry_and_runner():
 
 def test_distinct_lenses_yield_disagreement():
     per_lens = {
-        "mechanisms": {"position": "a deliberate consolidation mechanism",
-                       "assumptions": ["strategic"], "confidence": 0.7},
-        "what is actually proven": {"position": "the link is speculative and "
-                                       "unproven", "assumptions": ["cautious"],
-                                    "confidence": 0.6},
-        "prior episodes": {"position": "this follows an established pattern",
-                           "assumptions": ["precedent"], "confidence": 0.6},
+        "Analyst": {"position": "Her appointment leverages the Fox News "
+                    "profile and social media amplification she built.",
+                    "assumptions": ["strategic"], "confidence": 0.7},
+        "Skeptic": {"position": "The appointment is established, but the link "
+                    "to her social media activity is speculative.",
+                    "assumptions": ["cautious"], "confidence": 0.6},
+        "Historian": {"position": "This appointment follows the pattern of "
+                     "elevating a media figure who amplified the president "
+                     "narratives.",
+                     "assumptions": ["precedent"], "confidence": 0.6},
     }
     factory = _factory(per_lens)
     registry = PersonaRegistry()

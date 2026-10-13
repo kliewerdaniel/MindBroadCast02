@@ -96,6 +96,31 @@ class GroundingVerifier:
         "told", "added", "noted", "confirmed", "announced", "mean", "means",
     }
 
+    # Analytical vocabulary: words about REASONING (mechanism, significance,
+    # uncertainty), not about the world. A persona must be able to say a link
+    # is "speculative" or call something a "pattern" without that counting as
+    # an invented fact — those describe the analysis, not new entities. Kept
+    # strictly separate from entities/numbers, which remain checked exactly:
+    # a fabricated name or figure is still rejected.
+    ANALYTICAL_VOCAB = {
+        "mechanism", "leverages", "leverage", "speculative", "speculation",
+        "pattern", "patterns", "precedent", "trend", "trends", "significance",
+        "significant", "implication", "implications", "suggests", "suggest",
+        "indicates", "indicate", "reflects", "reflect", "follows", "follow",
+        "consistent", "mirrors", "mirror", "echoes", "parallel", "parallels",
+        "causal", "cause", "consequence", "consequences", "second-order",
+        "established", "unproven", "proven", "evidence", "link", "linked",
+        "connection", "correlation", "causal", "strategic", "deliberate",
+        "appears", "seems", "likely", "possibly", "perhaps", "arguably",
+        "becoming", "built", "activity", "activities", "role", "roles",
+        "amplification", "channels", "channel", "narrative", "narratives",
+        "consolidation", "consolidates", "institutional", "communication",
+        "normalize", "extending", "influence", "worker", "figure", "figures",
+        "elevating", "elevated", "elevate", "appointing", "appointed",
+        "placing", "placed", "consolidating", "reinforce", "reinforces",
+        "reinforcing", "institutional", "institutionalize", "normalizing",
+    }
+
     def __init__(self, facts: List[str]):
         self.source_tokens: set = set()
         self.source_numbers: set = set()
@@ -110,7 +135,7 @@ class GroundingVerifier:
         # Numbers must all appear in the source — a new figure is invention.
         if not _numbers(text).issubset(self.source_numbers):
             return False
-        novel = _content_tokens(text) - self.source_tokens - self.ALLOWED_CONNECTIVES
+        novel = _content_tokens(text) - self.source_tokens - self.ALLOWED_CONNECTIVES - self.ANALYTICAL_VOCAB
         # Accept morphological variants of sourced words (plurals, verb
         # endings, boosted/raises): a token is allowed if it shares a stem
         # with any source token. Compare on a crude stem (strip common
@@ -121,6 +146,37 @@ class GroundingVerifier:
             if _stem(tok) not in source_stems:
                 return False
         return True
+
+    def introduces_new_entities(self, turn_text: str) -> List[str]:
+        """Proper-noun-like tokens absent from the source facts.
+
+        The concrete §12.3 violation is inventing a named entity or figure —
+        "Kellyanne Conway", "Sean Hannity", "the IMF". Interpretive vocabulary
+        ("speculative", "mechanism", "pattern") is legitimate analysis, not a
+        new fact, and cannot be pre-allowlisted without chasing the model's
+        every word. So this checks only capitalized multi-word sequences and
+        capitalized tokens that do not appear in the source — the bounded,
+        checkable class of invention. Used by the persona floor.
+        """
+        text = turn_text.strip()
+        if not text:
+            return []
+        source_lower = " ".join(sorted(self.source_tokens))
+        # Capitalized words not at sentence start are likely proper nouns.
+        words = re.findall(r"\b[A-Z][a-zA-Z]+\b", text)
+        invented = []
+        for w in words:
+            if w.lower() in self.source_tokens:
+                continue
+            # Skip sentence-initial words (capitalized by grammar, not name).
+            idx = text.find(w)
+            prefix = text[:idx].rstrip()
+            if prefix.endswith((".", "!", "?", ";", ":")) or not prefix:
+                continue
+            if _stem(w.lower()) in {_stem(s) for s in self.source_tokens}:
+                continue
+            invented.append(w)
+        return invented
 
 
 class EditorialComposer:

@@ -204,6 +204,32 @@ class LLMAnalysisFactory:
                 confidence = float(obj.get("confidence", 0.5))
             except (TypeError, ValueError):
                 confidence = 0.5
+
+        # §12.3 grounding floor: a persona may interpret significance, mechanism,
+        # and implication, but must not introduce new facts. The prompt asks, but
+        # the model may still invent (observed live: a historian citing named
+        # 2016 figures absent from the facts). Deterministic check on the
+        # bounded, checkable class of invention — a fabricated named entity or
+        # figure — and drop the position if one appears, so it cannot air.
+        # Interpretive vocabulary ("speculative", "mechanism") is legitimate
+        # analysis and is not policed here.
+        if position and packet.facts:
+            from ..inference.editor import GroundingVerifier
+            verifier = GroundingVerifier(packet.facts)
+            invented = verifier.introduces_new_entities(position)
+            if invented:
+                return PersonaAnalysis(
+                    persona_id=lens.persona_id,
+                    question=packet.question,
+                    position="",                 # dropped: ungrounded
+                    assumptions=[f"position dropped: introduced entity "
+                                 f"'{', '.join(invented[:3])}' not in the "
+                                 f"shared facts (§12.3)"],
+                    evidence_used=list(packet.evidence_references),
+                    shared_facts_accepted=list(packet.facts),
+                    confidence=0.0,
+                )
+
         return PersonaAnalysis(
             persona_id=lens.persona_id,
             question=packet.question,

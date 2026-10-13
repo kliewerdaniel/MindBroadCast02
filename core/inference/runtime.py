@@ -49,6 +49,11 @@ class RuntimeConfig:
     script_schema: Dict[str, Any] = field(
         default_factory=lambda: {"$id": "broadcast_script_v1"})
     persona_id: str = "presenter"
+    # Prefer multi-persona dialogue for stories with 2+ facts (§12.4). When the
+    # disagreement guard suppresses (nothing to debate) or the dialogue is not
+    # approved, the runtime falls back to the single-voice editor. Set False to
+    # always use the single-voice editor.
+    multi_persona: bool = True
 
 
 @dataclass
@@ -152,6 +157,17 @@ class LiveRuntime:
         if facts:
             facts_block = ("\n\nFacts to report (use only these):\n"
                            + "\n".join(f"- {f}" for f in facts))
+
+        # 1b. Multi-persona dialogue first (§12.4). When a story carries enough
+        # substance, three personas read it independently and the guard decides
+        # whether real disagreement exists. If the dialogue is approved, air it;
+        # otherwise fall through to the single-voice editor. This is the richer
+        # path; the editor is the fallback, not the default.
+        if self.config.multi_persona and len(facts) >= 2:
+            dialogue_script = self.compose_dialogue(objective, facts)
+            if dialogue_script is not None:
+                return await self._finish_dialogue(
+                    segment_id, segment, dialogue_script, packet, facts)
 
         # 2. Real LLM generation (§14.3), idempotent and bounded.
         request = self.generator.make_request(
@@ -312,6 +328,58 @@ class LiveRuntime:
             self.errors.append(f"dialogue suppressed: {reason}")
             return None
         return outcome.script
+
+    async def _finish_dialogue(
+        self, segment_id: str, segment: Any, script: Any,
+        packet: Any, facts: List[str],
+    ) -> Optional[TranscriptLine]:
+        """Drive an approved multi-persona script through lifecycle + TTS.
+
+        Mirrors the single-voice tail (steps 4-6): legal §13.3 lifecycle to
+        READY, synthesize the joined turns, buffer, play out, complete. The
+        script is already validated by the orchestrator (§12.4 step 8) and its
+        turns carry the packet's evidence references.
+        """
+        from ..broadcast.entities import AudioChunk
+        from ..broadcast.providers import SynthesisRequest
+
+        for status in (SegmentStatus.GENERATING, SegmentStatus.GENERATED,
+                       SegmentStatus.VALIDATING, SegmentStatus.APPROVED,
+                       SegmentStatus.SYNTHESIZING, SegmentStatus.READY,
+                       SegmentStatus.QUEUED):
+            self.director.advance(segment_id, status)
+        self.director.queue.append(segment_id)
+
+        spoken_text = " ".join(t.text for t in script.turns if t.text).strip()
+        if not spoken_text:
+            self.director.advance(segment_id, SegmentStatus.CANCELLED)
+            return None
+        try:
+            synth = await self.tts.synthesize(SynthesisRequest(
+                segment_id=segment_id, text=spoken_text,
+                synthesis_attempt=segment.media_generation_id,
+                voice_profile=None))
+        except ProviderError as error:
+            self.errors.append(f"{segment_id}: TTS failed — {error}")
+            self.director.advance(segment_id, SegmentStatus.FAILED)
+            self.director.advance(segment_id, SegmentStatus.APPROVED)
+            return None
+
+        self.director.attach_audio(segment_id, AudioChunk(
+            segment_id=segment_id,
+            synthesis_attempt=segment.media_generation_id,
+            sequence=0, data=synth.audio, duration_ms=synth.duration_ms,
+            is_end_of_segment=True))
+        self.director.begin_playback(segment_id)
+        self.director.complete_playback(segment_id)
+        self.segments_produced += 1
+
+        speakers = ", ".join(dict.fromkeys(
+            t.persona_id for t in script.turns if t.persona_id))
+        return TranscriptLine(
+            speaker=speakers or self.config.persona_id, text=spoken_text,
+            segment_id=segment_id, delivered=True,
+            duration_ms=synth.duration_ms)
 
     def summary(self) -> Dict[str, Any]:
         return {
