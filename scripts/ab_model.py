@@ -51,22 +51,27 @@ def coverage(text):
 
 
 def prompt_for():
-    facts_block = "\n\nFacts to report (use only these):\n" + "\n".join(
-        f"- {f}" for f in FACTS)
+    """The strict per-fact prompt, matching core/inference/runtime.py.
+
+    This is the current pipeline: rewrite each numbered fact as one spoken
+    turn, in order, adding nothing. Kept in sync with the runtime's longform
+    branch so A/B measures what actually airs, not the discarded open-ended
+    "compose a bulletin" prompt (which padded and invented — repetition
+    0.26-0.45).
+    """
+    numbered = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(FACTS))
     return (
-        "Report the developing story: Katie Zacharia chief spokesperson.\n\n"
-        "You are a news presenter writing a spoken bulletin. Compose a short "
-        "multi-turn script using ONLY the facts above:\n"
-        "- Turn 1: a one-sentence lead that opens the story.\n"
-        "- Turns 2-4: one sentence each adding detail, each grounded in a "
-        "distinct fact above.\n"
-        "- Final turn: a one-sentence close that says where the story stands.\n"
-        "Do not invent facts. Do not repeat yourself. Vary the openings so it "
-        "reads as spoken narration, not a list.\n"
-        "Respond with JSON like this example:\n"
-        '{"turns":[{"sequence":1,"text":"a lead sentence",'
-        '"speech_act":"factual_report"},{"sequence":2,"text":"a detail '
-        'sentence","speech_act":"analysis"}]}')
+        "Rewrite each numbered fact below as one clear spoken sentence for a "
+        "news broadcast.\n"
+        "Rules: output exactly one turn per fact, in the same order. Use ONLY "
+        "the information in that fact. Do not add names, roles, dates, or "
+        "details that are not in the fact. Do not repeat a fact. Vary "
+        "sentence openings so it reads as narration, not a list.\n\n"
+        f"Facts:\n{numbered}\n\n"
+        "Respond with JSON like this example (one turn per fact):\n"
+        '{"turns":[{"sequence":1,"text":"<fact 1 rewritten>",'
+        '"speech_act":"factual_report"},{"sequence":2,"text":"<fact 2 '
+        'rewritten>","speech_act":"factual_report"}]}')
 
 
 def run(model):
