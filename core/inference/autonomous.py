@@ -73,6 +73,12 @@ class AutonomousBroadcaster:
         self.compiler = KnowledgeCompiler(self.store)
         self.story_engine = StoryEngine(self.store)
         self.cycles: List[BroadcastCycle] = []
+        # Continuity: claim ids already aired, so a continuous loop never
+        # re-broadcasts the same story. Without this, re-clustering all claims
+        # each cycle would re-air the top story forever.
+        self._aired_claim_ids: set = set()
+        self._aired_story_ids: set = set()
+        self._stop = False
 
     async def register_source(self, name: str, endpoint: str) -> str:
         source = Source(name=name, endpoint=endpoint,
@@ -118,9 +124,12 @@ class AutonomousBroadcaster:
         # topics") compiles into a claim like any other; airing it is noise.
         candidates = [c for c in candidates
                       if not self._is_boilerplate(c)]
+        # 3b. Continuity: drop stories already aired, so a continuous loop
+        # advances to fresh stories instead of repeating itself.
+        candidates = [c for c in candidates if not self._already_aired(c)]
         if not candidates:
-            cycle.silent_reason = ("no substantive stories (only feed "
-                                   "boilerplate was ingested)")
+            cycle.silent_reason = ("no fresh stories to broadcast "
+                                   "(everything ingested has already aired)")
             self.cycles.append(cycle)
             return cycle
 
@@ -153,12 +162,53 @@ class AutonomousBroadcaster:
         if line is None:
             cycle.silent_reason = "; ".join(self.runtime.errors[-1:]) or \
                 "generation produced no segment"
-        elif self.on_segment is not None:
+        else:
+            # Continuity: remember what aired so the loop advances.
+            self._mark_aired(chosen)
+        if line is not None and self.on_segment is not None:
             # Notify the listener (console/SSE) exactly as runtime.run() would,
             # so the autonomous path and the demo path surface segments alike.
             self.on_segment(line)
         self.cycles.append(cycle)
         return cycle
+
+    async def run_forever(self, source_id: Optional[str] = None,
+                          poll_seconds: float = 120.0,
+                          on_cycle: Optional[Any] = None,
+                          max_cycles: int = 0) -> None:
+        """The continuous station: watch, decide, air, repeat.
+
+        Sleeps between cycles and stays silent when the feed has nothing fresh
+        (§27.4) rather than re-airing old stories. `max_cycles` bounds it for
+        testing; 0 runs until `stop()`.
+        """
+        import asyncio
+        self._stop = False
+        count = 0
+        while not self._stop:
+            cycle = await self.run_cycle(source_id)
+            count += 1
+            if on_cycle is not None:
+                on_cycle(cycle)
+            if max_cycles and count >= max_cycles:
+                break
+            if self._stop:
+                break
+            await asyncio.sleep(poll_seconds)
+
+    def stop(self) -> None:
+        self._stop = True
+
+    def _already_aired(self, candidate: Any) -> bool:
+        # A story is identified by its story_id (stable via _identity_key), not
+        # by its claim set — clustering can merge additional claims into an
+        # existing story between cycles, so a growing claim_ids list is not a
+        # new story. Keying on story_id is what makes the loop advance.
+        return candidate.story_id in self._aired_story_ids
+
+    def _mark_aired(self, candidate: Any) -> None:
+        self._aired_story_ids.add(candidate.story_id)
+        self._aired_claim_ids.update(getattr(candidate, "claim_ids", []))
 
     # ── helpers ───────────────────────────────────────────────────────
 
