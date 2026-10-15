@@ -3,45 +3,106 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MindBroadcast</title>
+<title>MINDBROADCAST — a station that watches the world</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-<header>
-  <h1>MINDBROADCAST</h1>
-  <div class="status">
-    <span id="health-dot" class="dot unknown"></span>
-    <span id="health-text">checking…</span>
-  </div>
-</header>
 
-<main>
-  <section class="player-panel">
-    <div class="now-playing">
-      <div class="label">NOW PLAYING</div>
-      <div id="current-text" class="current-text">—</div>
-      <div id="current-meta" class="meta"></div>
-    </div>
-    <audio id="player" controls></audio>
-    <div class="controls">
-      <button id="station-btn">Start the station</button>
-      <button id="live-btn" class="secondary">One cycle</button>
-      <button id="demo-btn" class="secondary">Demo</button>
-      <span id="run-state" class="run-state"></span>
-    </div>
-    <div class="station-status">
-      <span id="station-dot" class="dot unknown"></span>
-      <span id="station-text">station idle</span>
-    </div>
-    <div id="cycle-info" class="cycle-info"></div>
-  </section>
+<!-- The field: a canvas that visualises what the station is currently
+     thinking. One voice speaks; the field carries the mind behind it. -->
+<canvas id="field" aria-hidden="true"></canvas>
+<div class="vignette" aria-hidden="true"></div>
+<div class="scanlines" aria-hidden="true"></div>
 
-  <section class="transcript-panel">
-    <div class="label">LIVE TRANSCRIPT</div>
-    <ol id="transcript" class="transcript"></ol>
-  </section>
-</main>
+<div class="shell">
 
+  <header class="masthead">
+    <div class="brand">
+      <h1>MIND<span>BROADCAST</span></h1>
+      <div class="tagline">a station that watches the world</div>
+    </div>
+    <div class="vitals">
+      <div class="vital"><span id="health-dot" class="dot unknown"></span><span id="health-text">connecting</span></div>
+      <div class="vital"><span id="station-dot" class="dot unknown"></span><span id="station-text">idle</span></div>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <!-- LEFT: the signal field + now playing -->
+    <section class="stage-panel">
+      <div class="panel-head">
+        <span class="panel-title">SIGNAL FIELD</span>
+        <span id="field-mode" class="panel-mode">dormant</span>
+      </div>
+
+      <div class="stage">
+        <div id="orb" class="orb" aria-hidden="true">
+          <div class="orb-core"></div>
+          <div class="orb-ring r1"></div>
+          <div class="orb-ring r2"></div>
+          <div class="orb-ring r3"></div>
+        </div>
+        <div class="stage-readout">
+          <div class="label">NOW SPEAKING</div>
+          <div id="current-text" class="current-text">—</div>
+          <div id="current-meta" class="meta"></div>
+        </div>
+      </div>
+
+      <div class="waveform-wrap" aria-hidden="true">
+        <canvas id="waveform"></canvas>
+      </div>
+
+      <div class="controls">
+        <button id="station-btn" class="primary">Start the station</button>
+        <button id="live-btn" class="ghost">One cycle</button>
+        <button id="demo-btn" class="ghost">Demo</button>
+      </div>
+      <div class="run-row">
+        <span id="run-state" class="run-state"></span>
+      </div>
+
+      <div id="cycle-info" class="cycle-info"></div>
+    </section>
+
+    <!-- RIGHT: the world model, visible -->
+    <section class="side-panel">
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">WORLD MODEL</span><span id="world-count" class="card-count">0</span></div>
+        <div class="regions" id="regions"></div>
+        <div class="sources-line">25 feeds · 8 regions · rotating</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">LAST CYCLE</span></div>
+        <div class="cycle-stats">
+          <div class="stat"><span id="stat-articles" class="stat-num">0</span><span class="stat-label">observed</span></div>
+          <div class="stat"><span id="stat-claims" class="stat-num">0</span><span class="stat-label">claims</span></div>
+          <div class="stat"><span id="stat-stories" class="stat-num">0</span><span class="stat-label">stories</span></div>
+        </div>
+      </div>
+
+      <div class="card transcript-card">
+        <div class="card-head"><span class="card-title">TRANSCRIPT</span></div>
+        <ol id="transcript" class="transcript"></ol>
+      </div>
+
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>evidence and opinion, kept apart</span>
+    <span id="audio-hint" class="audio-hint">click anywhere to enable sound</span>
+  </footer>
+
+</div>
+
+<audio id="player" preload="auto"></audio>
 <script src="/static/app.js"></script>
 </body>
 </html>
