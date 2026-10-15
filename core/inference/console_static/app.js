@@ -16,6 +16,7 @@ const runState = document.getElementById("run-state");
 let queue = [];        // segments waiting to play
 let playing = false;
 let stationRunning = false;
+let audioEnabled = false;   // browsers block play() until a user gesture
 
 function setStationUI(running) {
   stationRunning = running;
@@ -23,6 +24,49 @@ function setStationUI(running) {
   stationDot.className = "dot " + (running ? "ok" : "unknown");
   stationText.textContent = running ? "station on air" : "station idle";
 }
+
+function setAudioState(state) {
+  // state: 'blocked' | 'ready'
+  audioEnabled = state === "ready";
+  if (audioEnabled) {
+    runState.textContent = "audio on";
+    playNext();
+  } else {
+    runState.textContent = "click anywhere to enable audio";
+  }
+}
+
+function playNext() {
+  if (playing || queue.length === 0) return;
+  const entry = queue.shift();
+  playing = true;
+  currentText.textContent = entry.text;
+  currentMeta.textContent = entry.segment_id +
+    (entry.duration_ms ? " · " + (entry.duration_ms / 1000).toFixed(1) + "s" : "");
+  if (entry.audio_url) {
+    player.src = entry.audio_url;
+    const p = player.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {
+        // Autoplay blocked: surface it instead of swallowing it silently, so
+        // the listener knows why nothing is audible. A one-time gesture
+        // (any click) unlocks playback for the rest of the session.
+        playing = false;
+        setAudioState("blocked");
+        queue.unshift(entry);   // replay this segment once audio is allowed
+      });
+    }
+  }
+  player.onended = () => { playing = false; playNext(); };
+}
+
+// Browsers require a user gesture before audio may play. Arm it on the first
+// interaction anywhere, then flush the queue.
+["click", "keydown", "touchstart"].forEach(evt =>
+  document.addEventListener(evt, () => {
+    if (!audioEnabled) setAudioState("ready");
+  }, { once: false }));
+
 
 async function refreshHealth() {
   try {
@@ -81,20 +125,6 @@ function addTranscript(entry, highlight) {
   transcriptEl.appendChild(li);
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   return li;
-}
-
-function playNext() {
-  if (playing || queue.length === 0) return;
-  const entry = queue.shift();
-  playing = true;
-  currentText.textContent = entry.text;
-  currentMeta.textContent = entry.segment_id +
-    (entry.duration_ms ? " · " + (entry.duration_ms / 1000).toFixed(1) + "s" : "");
-  if (entry.audio_url) {
-    player.src = entry.audio_url;
-    player.play().catch(() => {});
-  }
-  player.onended = () => { playing = false; playNext(); };
 }
 
 function connect() {

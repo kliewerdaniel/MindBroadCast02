@@ -36,6 +36,16 @@ from ..world_model.stories import StoryEngine
 from .runtime import LiveRuntime, RuntimeConfig, TranscriptLine
 
 
+# Bound the compile backlog per cycle (§23.3: work is bounded). A cycle that
+# inherits a large never-compiled backlog drains it over several cycles rather
+# than blocking on a single unbounded compile pass.
+_MAX_COMPILE_PER_CYCLE = 15
+
+# Facts per aired segment. Enough for a real multi-turn bulletin / multi-persona
+# debate, bounded so a long feature article does not become an exhaustive read.
+_MAX_FACTS_PER_SEGMENT = 6
+
+
 @dataclass
 class BroadcastCycle:
     """What one ingest->decide->broadcast cycle observed and did."""
@@ -144,11 +154,14 @@ class AutonomousBroadcaster:
             self.cycles.append(cycle)
             return cycle
 
-        # 2. Compile newly captured articles into claims/evidence.
-        new_articles = await self._recent_articles(source.id,
-                                                   cycle.articles_ingested)
+        # 2. Compile articles that have not been compiled yet into
+        # claims/evidence. Selecting by "last N ingested" left a backlog of
+        # never-compiled full-text articles untouched (each yields many
+        # claims), which is why broadcasts were one-fact and short. Compile the
+        # backlog, bounded per cycle so one cycle cannot run unbounded.
+        new_articles = await self._uncompiled_articles(source.id)
         claims_compiled = 0
-        for article in new_articles:
+        for article in new_articles[:_MAX_COMPILE_PER_CYCLE]:
             result = await self.compiler.compile(article)
             claims_compiled += len(getattr(result.claims, "claims", []))
         cycle.claims_compiled = claims_compiled
@@ -271,6 +284,23 @@ class AutonomousBroadcaster:
         from_source = [a for a in articles if a.source_id == source_id]
         return from_source[-limit:] if limit else from_source
 
+    async def _uncompiled_articles(self, source_id: Optional[str] = None
+                                   ) -> List[Any]:
+        """Articles that have produced no claims yet — the compile backlog.
+
+        Selecting by "last N ingested" is wrong: a cycle that ingests few
+        articles re-compiles old ones while a backlog of never-compiled
+        full-text articles (which yield many claims each) sits untouched. That
+        is why stories came out one-fact and short. Compile whatever has no
+        claims, which also self-heals a backlog from an earlier bug.
+        """
+        articles = await self.store.list_articles()
+        if source_id:
+            articles = [a for a in articles if a.source_id == source_id]
+        have_claims = await self.store.claim_article_ids()
+        compiled = set(have_claims.values())
+        return [a for a in articles if a.id not in compiled]
+
     async def _claim_records(self) -> List[Any]:
         from ..world_model.stories import ClaimRecord
         claims = await self.store.list_claims()
@@ -372,6 +402,12 @@ class AutonomousBroadcaster:
             seen.add(key)
             claims.append(claim_id)
             facts.append(claim.canonical_proposition)
+            # Cap facts per segment (§23.3 bounded work). A long feature article
+            # can yield dozens of distinct claims; airing all of them would be
+            # an exhaustive read, not a broadcast. Keep the lead facts; the
+            # rest remain in the world model for a later segment.
+            if len(facts) >= _MAX_FACTS_PER_SEGMENT:
+                break
         if not facts:
             return None
         return {
