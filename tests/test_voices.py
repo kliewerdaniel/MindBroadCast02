@@ -1,42 +1,96 @@
-"""Tests for persona voices: distinct paces, per-speaker synthesis grouping.
+"""Tests for the consistent station voice: one Chris clone, varied delivery.
 
-The invariant: a multi-persona debate must be audibly a debate. Voices differ
-by pace now (always available) and by zero-shot clone when reference audio
-exists. An unknown persona degrades to the neutral presenter, never a crash.
+The invariant flipped from "distinct voices per persona" to "one consistent
+voice (Chris), differentiated only by delivery." These tests assert the
+consistency guarantee and that delivery still varies enough to keep the debate
+readable.
 """
 
+import os
+
 from core.inference.runtime import LiveRuntime
-from core.inference.voices import DEFAULT_VOICES, VoiceProfile, VoiceRegistry
+from core.inference.voices import (
+    DEFAULT_VOICES,
+    VoiceProfile,
+    VoiceRegistry,
+    chris_voice,
+)
 
 
-# ── VoiceRegistry ────────────────────────────────────────────────────
-
-def test_default_voices_are_distinct_by_pace():
-    reg = VoiceRegistry()
-    assert reg.speeds_are_distinct(["analyst", "skeptic", "historian"])
+def _registry():
+    return VoiceRegistry()
 
 
-def test_for_persona_returns_configured_voice():
-    reg = VoiceRegistry()
-    assert reg.for_persona("skeptic").speed < 1.0     # deliberate
-    assert reg.for_persona("analyst").speed > 1.0     # brisk
+# ── the consistency guarantee ────────────────────────────────────────
+
+def test_chris_clip_exists():
+    reg = _registry()
+    path = reg.chris_clip_path()
+    assert path is not None, "chris.wav not found at project root"
+    assert os.path.exists(path)
 
 
-def test_unknown_persona_gets_neutral_fallback():
-    reg = VoiceRegistry()
-    voice = reg.for_persona("nobody")
-    assert voice.speed == 1.0
-    assert voice.persona_id == "presenter"
+def test_all_personas_use_the_same_voice():
+    reg = _registry()
+    assert reg.all_use_chris_voice(["analyst", "skeptic", "historian"])
 
+
+def test_presenter_also_chris():
+    reg = _registry()
+    assert reg.for_persona("presenter").reference_audio == reg.chris_clip_path()
+
+
+def test_unknown_persona_falls_back_to_chris():
+    reg = _registry()
+    v = reg.for_persona("nobody")
+    assert v.reference_audio == reg.chris_clip_path()
+    assert v.speed == 1.0
+
+
+def test_chris_voice_factory_sets_reference():
+    v = chris_voice("x", speed=1.0)
+    assert v.reference_audio == _registry().chris_clip_path()
+
+
+# ── delivery varies, identity does not ───────────────────────────────
+
+def test_delivery_is_varied():
+    reg = _registry()
+    assert reg.delivery_is_varied(["analyst", "skeptic", "historian"])
+
+
+def test_demeanor_never_requests_a_different_speaker():
+    """instruct scopes to delivery, never identity — keeps the voice Chris."""
+    reg = _registry()
+    # None of the demeanors should describe a different person/voice.
+    banned = ("woman", "man ", "girl", "boy", "another", "different voice",
+              "female", "male")
+    for pid in ("analyst", "skeptic", "historian", "presenter"):
+        instr = (reg.for_persona(pid).instruct or "").lower()
+        for word in banned:
+            assert word not in instr, (
+                f"{pid} demeanor requests a different speaker: {instr!r}")
+
+
+def test_personas_share_one_reference_clip():
+    reg = _registry()
+    clips = {reg.for_persona(p).reference_audio
+             for p in ("analyst", "skeptic", "historian")}
+    assert len(clips) == 1
+
+
+# ── registration still works ─────────────────────────────────────────
 
 def test_register_overrides():
-    reg = VoiceRegistry()
-    reg.register(VoiceProfile(persona_id="analyst", speed=0.5))
+    reg = _registry()
+    reg.register(chris_voice("analyst", speed=0.5))
     assert reg.for_persona("analyst").speed == 0.5
+    # Still the same voice.
+    assert reg.all_use_chris_voice(["analyst"])
 
 
 def test_voice_profile_carries_clone_reference():
-    reg = VoiceRegistry()
+    reg = _registry()
     reg.register(VoiceProfile(
         persona_id="analyst", speed=1.0,
         reference_audio="/voices/analyst.wav",
@@ -44,24 +98,6 @@ def test_voice_profile_carries_clone_reference():
     v = reg.for_persona("analyst")
     assert v.reference_audio == "/voices/analyst.wav"
     assert v.reference_text == "a sample line"
-
-
-def test_default_personas_carry_voice_instructions():
-    """Each persona has an `instruct` describing a distinct timbre.
-
-    Qwen3-TTS's instruct param shapes voice from a description — genuine
-    variation with no reference recording (the -Base checkpoint can't do
-    generate_voice_design, but instruct works).
-    """
-    reg = VoiceRegistry()
-    for pid in ("analyst", "skeptic", "historian"):
-        assert reg.for_persona(pid).instruct
-    # The presenter is the neutral voice — no instruction.
-    assert reg.for_persona("presenter").instruct is None
-    # The three personas have distinct instructions.
-    instrs = {reg.for_persona(p).instruct
-              for p in ("analyst", "skeptic", "historian")}
-    assert len(instrs) == 3
 
 
 # ── per-speaker grouping ─────────────────────────────────────────────
