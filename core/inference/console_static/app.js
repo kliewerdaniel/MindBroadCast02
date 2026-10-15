@@ -215,13 +215,13 @@ async function toggleStation() {
   const url = stationRunning ? "/api/station/stop" : "/api/station/start";
   const opts = stationRunning
     ? { method: "POST" }
-    : { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ poll_seconds: 90 }) };
+    : { method: "POST", headers: { "Content-Type": "application/json" } };
+  if (!stationRunning) opts.body = JSON.stringify({ poll_seconds: 90, world: true });
   try {
     const res = await fetch(url, opts);
     if (!stationRunning && res.ok) {
       setStationUI(true);
-      runState.textContent = "station started";
+      runState.textContent = "world station started";
     } else if (stationRunning && res.ok) {
       runState.textContent = "stopping after current cycle…";
     } else {

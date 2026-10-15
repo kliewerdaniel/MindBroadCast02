@@ -130,9 +130,35 @@ class AutonomousBroadcaster:
             # in-memory rather than crashing the broadcast
 
     async def register_source(self, name: str, endpoint: str) -> str:
+        # Idempotent on endpoint: re-registering a feed returns the existing
+        # source rather than creating a duplicate. The endpoint is the stable
+        # identity; the display name is cosmetic.
+        existing = await self.store.find_source_by_endpoint(endpoint)
+        if existing is not None:
+            return existing.id
         source = Source(name=name, endpoint=endpoint,
                         source_type=SourceType.RSS)
         return await self.store.add_source(source)
+
+    async def register_world_sources(
+        self, regions: Optional[List[str]] = None
+    ) -> Dict[str, str]:
+        """Register the curated world feeds; return {name: source_id}.
+
+        Region-balanced so the broadcast draws from across the world, not one
+        or two Anglophone outlets. Idempotent — safe to call repeatedly; only
+        new endpoints create rows. `regions` limits to a subset.
+        """
+        from .world_sources import WORLD_FEEDS, all_feeds
+        if regions:
+            feeds = [s for r in regions for s in WORLD_FEEDS.get(r, [])]
+        else:
+            feeds = all_feeds()
+        registered: Dict[str, str] = {}
+        for feed in feeds:
+            registered[feed.name] = await self.register_source(
+                feed.name, feed.url)
+        return registered
 
     async def run_cycle(self, source_id: Optional[str] = None
                         ) -> BroadcastCycle:

@@ -687,6 +687,20 @@ class WorldStore:
             return None
         return self._row_to_source(row)
 
+    async def find_source_by_endpoint(self, endpoint: str) -> Optional[Source]:
+        """The existing source with this endpoint, or None.
+
+        Registration is idempotent on endpoint: re-registering the same feed
+        returns the existing row rather than creating a duplicate. The endpoint
+        is the stable identity of a source; the display name may change.
+        """
+        conn = self.db.connect()
+        row = conn.execute(
+            "SELECT * FROM sources WHERE endpoint = ?", (endpoint,)).fetchone()
+        if row is None:
+            return None
+        return self._row_to_source(row)
+
     async def list_sources(self, enabled_only: bool = False) -> List[Source]:
         conn = self.db.connect()
         query = "SELECT * FROM sources"

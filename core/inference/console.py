@@ -298,18 +298,27 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     # Optional multi-source: a list of {source, endpoint} registers several
     # feeds and runs the loop unpinned so it rotates across them (§3).
     extra = body.get("sources") or []
+    # world=True registers the full curated world registry (all regions) and
+    # runs unpinned so the loop rotates across every region — the station
+    # represents the world, not one or two outlets.
+    use_world = bool(body.get("world", False))
 
     def station_loop() -> None:
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(
-                state.autonomous.register_source(name, endpoint))
-            for item in extra:
-                loop.run_until_complete(state.autonomous.register_source(
-                    item.get("source", item.get("name", "source")),
-                    item.get("endpoint", "")))
+            if use_world:
+                loop.run_until_complete(
+                    state.autonomous.register_world_sources())
+                source_label = "World"
+            else:
+                loop.run_until_complete(
+                    state.autonomous.register_source(name, endpoint))
+                for item in extra:
+                    loop.run_until_complete(state.autonomous.register_source(
+                        item.get("source", item.get("name", "source")),
+                        item.get("endpoint", "")))
+                source_label = name if not extra else f"{name} +{len(extra)}"
             # Unpinned: run_forever rotates across all enabled sources.
-            source_label = name if not extra else f"{name} +{len(extra)}"
             _broadcast({"type": "station", "state": "on_air",
                         "source": source_label})
             loop.run_until_complete(state.autonomous.run_forever(
@@ -322,12 +331,19 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
             _station["running"] = False
             _broadcast({"type": "station", "state": "stopped"})
 
-    _station.update({"running": True, "source": name, "endpoint": endpoint,
+    _station.update({"running": True,
+                     "source": "World" if use_world else name,
+                     "endpoint": endpoint,
                      "poll_seconds": poll,
                      "started_at": datetime.now(timezone.utc).isoformat()})
     thread = threading.Thread(target=station_loop, daemon=True)
     _station["thread"] = thread
     thread.start()
+    if use_world:
+        from .world_sources import all_feeds
+        n = len(all_feeds())
+        return {"started": True, "source": "World", "sources": n,
+                "poll_seconds": poll}
     return {"started": True, "source": name, "sources": 1 + len(extra),
             "poll_seconds": poll}
 
