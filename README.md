@@ -16,6 +16,10 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
+<p align="center">
+  <img alt="ss" src="docs/images/console.jpg">
+</p>
+
 ---
 
 ## What this is
