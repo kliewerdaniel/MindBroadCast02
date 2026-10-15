@@ -117,6 +117,7 @@ class ConsoleState:
             "segment_id": line.segment_id,
             "speaker": line.speaker,
             "text": line.text,
+            "turns": line.turns,
             "duration_ms": duration_ms,
             "audio_url": audio_url,
             "at": line.at.isoformat(),

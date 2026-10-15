@@ -43,17 +43,41 @@ async function refreshHealth() {
 function addTranscript(entry, highlight) {
   const li = document.createElement("li");
   if (highlight) li.className = "playing";
-  const speaker = document.createElement("div");
-  speaker.className = "speaker";
-  speaker.textContent = entry.speaker || "presenter";
-  const text = document.createElement("div");
-  text.className = "text";
-  text.textContent = entry.text;
+  const turns = entry.turns && entry.turns.length > 1 ? entry.turns : null;
+  if (turns) {
+    // Multi-voice segment: render each line attributed to its speaker so the
+    // debate is legible, not one anonymous blob.
+    li.className = (highlight ? "playing " : "") + "debate";
+    const head = document.createElement("div");
+    head.className = "speaker";
+    head.textContent = entry.speaker || "panel";
+    li.appendChild(head);
+    for (const t of turns) {
+      const line = document.createElement("div");
+      line.className = "turn";
+      const who = document.createElement("span");
+      who.className = "turn-speaker";
+      who.textContent = t.speaker || "presenter";
+      const what = document.createElement("span");
+      what.className = "turn-text";
+      what.textContent = t.text;
+      line.append(who, what);
+      li.appendChild(line);
+    }
+  } else {
+    const speaker = document.createElement("div");
+    speaker.className = "speaker";
+    speaker.textContent = entry.speaker || "presenter";
+    const text = document.createElement("div");
+    text.className = "text";
+    text.textContent = entry.text;
+    li.append(speaker, text);
+  }
   const meta = document.createElement("div");
   meta.className = "seg-meta";
   const secs = entry.duration_ms ? (entry.duration_ms / 1000).toFixed(1) + "s" : "";
   meta.textContent = [entry.segment_id, secs].filter(Boolean).join(" · ");
-  li.append(speaker, text, meta);
+  li.appendChild(meta);
   transcriptEl.appendChild(li);
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
   return li;

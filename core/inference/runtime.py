@@ -65,6 +65,10 @@ class TranscriptLine:
     delivered: bool = False
     duration_ms: Optional[int] = None
     at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Per-turn attribution for multi-voice segments: [{speaker, text}, ...] in
+    # spoken order. Empty for single-voice segments. Lets the console render a
+    # debate as attributed lines rather than one anonymous blob.
+    turns: List[Dict[str, str]] = field(default_factory=list)
 
 
 class LiveRuntime:
@@ -398,10 +402,14 @@ class LiveRuntime:
         spoken_text = " ".join(t.text for t in script.turns if t.text).strip()
         speakers = ", ".join(dict.fromkeys(
             t.persona_id for t in script.turns if t.persona_id))
+        turn_attribution = [
+            {"speaker": t.persona_id or "presenter", "text": t.text}
+            for t in script.turns if t.text
+        ]
         return TranscriptLine(
             speaker=speakers or self.config.persona_id, text=spoken_text,
             segment_id=segment_id, delivered=True,
-            duration_ms=total_ms)
+            duration_ms=total_ms, turns=turn_attribution)
 
     @staticmethod
     def _group_by_speaker(turns: List[Any]) -> List[tuple]:
