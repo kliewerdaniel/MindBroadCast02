@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img alt="ss" src="docs/images/console.jpg">
+  <a href="#the-console"><strong>▶ See the console</strong></a>
 </p>
 
 ---
@@ -108,6 +108,17 @@ Open **http://127.0.0.1:7862**, **click once** to enable audio (browsers block
 autoplay until a user gesture), then press **Start the station**.
 
 Override the model with `MBS_MODEL`, e.g. `MBS_MODEL=qwen3:4b`.
+
+### The console
+
+![The MindBroadcast console](docs/images/console.jpg)
+
+The signal field carries the station's mental state — dormant, watching,
+composing, speaking (reacting to the real audio spectrum), or silent. Because
+the whole station speaks in one voice, the field carries what the voice cannot:
+each persona pulls it toward its own hue, so the mind behind the speech is
+visible. The world-model panel shows the eight regions the station watches,
+and the live cycle counts show what it observed, compiled, and decided.
 
 ### 4. Compare models
 
