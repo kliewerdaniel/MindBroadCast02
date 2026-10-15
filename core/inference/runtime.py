@@ -39,6 +39,7 @@ from ..broadcast.providers import (
 from ..broadcast.validation import ScriptValidator
 from ..world_model.ranking import StoryFacts, StoryRanker
 from .editor import EditorialComposer
+from .voices import VoiceRegistry
 
 
 @dataclass
@@ -88,6 +89,7 @@ class LiveRuntime:
         self.generator = GenerationOrchestrator(self.llm)
         self.context_builder = ContextBuilder()
         self.editor = EditorialComposer(llm=self.llm)
+        self.voices = VoiceRegistry()
         self.transcript: List[TranscriptLine] = []
         self.segments_produced = 0
         self.errors: List[str] = []
@@ -350,36 +352,76 @@ class LiveRuntime:
             self.director.advance(segment_id, status)
         self.director.queue.append(segment_id)
 
-        spoken_text = " ".join(t.text for t in script.turns if t.text).strip()
-        if not spoken_text:
+        # Synthesize per speaker-group so each persona's voice applies, then
+        # concatenate. Consecutive turns by the same persona are one synthesis
+        # (so a persona's sentence flow is natural); when the speaker changes,
+        # the voice changes. This is what makes the debate audibly a debate
+        # rather than one voice reading every line.
+        groups = self._group_by_speaker(script.turns)
+        if not groups:
             self.director.advance(segment_id, SegmentStatus.CANCELLED)
             return None
+
+        pcm_parts: List[bytes] = []
+        total_ms = 0
         try:
-            synth = await self.tts.synthesize(SynthesisRequest(
-                segment_id=segment_id, text=spoken_text,
-                synthesis_attempt=segment.media_generation_id,
-                voice_profile=None))
+            for persona_id, text in groups:
+                if not text.strip():
+                    continue
+                voice = self.voices.for_persona(persona_id)
+                synth = await self.tts.synthesize(SynthesisRequest(
+                    segment_id=segment_id, text=text,
+                    synthesis_attempt=segment.media_generation_id,
+                    voice_profile=voice))
+                pcm_parts.append(synth.audio)
+                total_ms += int(synth.duration_ms or 0)
         except ProviderError as error:
             self.errors.append(f"{segment_id}: TTS failed — {error}")
             self.director.advance(segment_id, SegmentStatus.FAILED)
             self.director.advance(segment_id, SegmentStatus.APPROVED)
             return None
 
+        audio = b"".join(pcm_parts)
+        if not audio:
+            self.director.advance(segment_id, SegmentStatus.CANCELLED)
+            return None
+
         self.director.attach_audio(segment_id, AudioChunk(
             segment_id=segment_id,
             synthesis_attempt=segment.media_generation_id,
-            sequence=0, data=synth.audio, duration_ms=synth.duration_ms,
+            sequence=0, data=audio, duration_ms=total_ms,
             is_end_of_segment=True))
         self.director.begin_playback(segment_id)
         self.director.complete_playback(segment_id)
         self.segments_produced += 1
 
+        spoken_text = " ".join(t.text for t in script.turns if t.text).strip()
         speakers = ", ".join(dict.fromkeys(
             t.persona_id for t in script.turns if t.persona_id))
         return TranscriptLine(
             speaker=speakers or self.config.persona_id, text=spoken_text,
             segment_id=segment_id, delivered=True,
-            duration_ms=synth.duration_ms)
+            duration_ms=total_ms)
+
+    @staticmethod
+    def _group_by_speaker(turns: List[Any]) -> List[tuple]:
+        """Collapse consecutive same-persona turns into one synthesis unit.
+
+        Returns [(persona_id, joined_text), ...] in order, so a persona's
+        back-to-back lines flow as one utterance and the voice only changes
+        when the speaker does.
+        """
+        groups: List[tuple] = []
+        for turn in turns:
+            text = (turn.text or "").strip()
+            if not text:
+                continue
+            pid = turn.persona_id or "presenter"
+            if groups and groups[-1][0] == pid:
+                groups[-1] = (pid, groups[-1][1] + " " + text)
+            else:
+                groups.append((pid, text))
+        return groups
 
     def summary(self) -> Dict[str, Any]:
         return {

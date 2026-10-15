@@ -56,8 +56,9 @@ class Qwen3TTSHttpProvider:
         return await asyncio.get_event_loop().run_in_executor(
             None, self.health_check_sync)
 
-    def _synthesize_blocking(self, text: str, ref_audio, ref_text) -> bytes:
-        payload: Dict[str, Any] = {"text": text}
+    def _synthesize_blocking(self, text: str, ref_audio, ref_text,
+                             speed: float = 1.0) -> bytes:
+        payload: Dict[str, Any] = {"text": text, "speed": speed}
         if ref_audio:
             payload["ref_audio"] = ref_audio
             if ref_text:
@@ -77,13 +78,15 @@ class Qwen3TTSHttpProvider:
         loop = asyncio.get_event_loop()
         ref_audio = None
         ref_text = None
+        speed = 1.0
         if request.voice_profile is not None:
             ref_audio = getattr(request.voice_profile, "reference_audio", None)
             ref_text = getattr(request.voice_profile, "reference_text", None)
+            speed = float(getattr(request.voice_profile, "speed", 1.0) or 1.0)
 
         wav_bytes = await loop.run_in_executor(
             None, self._synthesize_blocking,
-            request.text, ref_audio, ref_text)
+            request.text, ref_audio, ref_text, speed)
         pcm = _wav_to_pcm_s16le(wav_bytes)
 
         # Derive duration from the PCM length at 24kHz mono s16le.
