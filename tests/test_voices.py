@@ -46,6 +46,24 @@ def test_voice_profile_carries_clone_reference():
     assert v.reference_text == "a sample line"
 
 
+def test_default_personas_carry_voice_instructions():
+    """Each persona has an `instruct` describing a distinct timbre.
+
+    Qwen3-TTS's instruct param shapes voice from a description — genuine
+    variation with no reference recording (the -Base checkpoint can't do
+    generate_voice_design, but instruct works).
+    """
+    reg = VoiceRegistry()
+    for pid in ("analyst", "skeptic", "historian"):
+        assert reg.for_persona(pid).instruct
+    # The presenter is the neutral voice — no instruction.
+    assert reg.for_persona("presenter").instruct is None
+    # The three personas have distinct instructions.
+    instrs = {reg.for_persona(p).instruct
+              for p in ("analyst", "skeptic", "historian")}
+    assert len(instrs) == 3
+
+
 # ── per-speaker grouping ─────────────────────────────────────────────
 
 class _Turn:

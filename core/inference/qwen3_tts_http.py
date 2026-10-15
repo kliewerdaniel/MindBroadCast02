@@ -57,8 +57,11 @@ class Qwen3TTSHttpProvider:
             None, self.health_check_sync)
 
     def _synthesize_blocking(self, text: str, ref_audio, ref_text,
-                             speed: float = 1.0) -> bytes:
+                             speed: float = 1.0,
+                             instruct: Optional[str] = None) -> bytes:
         payload: Dict[str, Any] = {"text": text, "speed": speed}
+        if instruct:
+            payload["instruct"] = instruct
         if ref_audio:
             payload["ref_audio"] = ref_audio
             if ref_text:
@@ -79,14 +82,16 @@ class Qwen3TTSHttpProvider:
         ref_audio = None
         ref_text = None
         speed = 1.0
+        instruct = None
         if request.voice_profile is not None:
             ref_audio = getattr(request.voice_profile, "reference_audio", None)
             ref_text = getattr(request.voice_profile, "reference_text", None)
             speed = float(getattr(request.voice_profile, "speed", 1.0) or 1.0)
+            instruct = getattr(request.voice_profile, "instruct", None)
 
         wav_bytes = await loop.run_in_executor(
             None, self._synthesize_blocking,
-            request.text, ref_audio, ref_text, speed)
+            request.text, ref_audio, ref_text, speed, instruct)
         pcm = _wav_to_pcm_s16le(wav_bytes)
 
         # Derive duration from the PCM length at 24kHz mono s16le.

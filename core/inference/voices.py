@@ -36,14 +36,28 @@ class VoiceProfile:
     speed: float = 1.0
     reference_audio: Optional[str] = None       # path or URL to a ref clip
     reference_text: Optional[str] = None
+    # A natural-language voice/delivery instruction passed to Qwen3-TTS's
+    # `instruct` param — shapes timbre and pacing from a description, so
+    # personas get genuinely distinct voices with no reference recording.
+    # Works on the -Base checkpoint (generate_voice_design needs -VoiceDesign).
+    instruct: Optional[str] = None
 
 
-# Default newsroom voices: distinct paces so the exchange is audible now.
-# Speeds chosen to be clearly different but natural (0.85-1.15).
+# Default newsroom voices: distinct pace AND timbre so the exchange is audible.
+# `instruct` descriptions are chosen to be clearly different in pitch and
+# character; speed reinforces the same contrast.
 DEFAULT_VOICES: Dict[str, VoiceProfile] = {
-    "analyst": VoiceProfile(persona_id="analyst", speed=1.08),
-    "skeptic": VoiceProfile(persona_id="skeptic", speed=0.88),
-    "historian": VoiceProfile(persona_id="historian", speed=0.96),
+    "analyst": VoiceProfile(
+        persona_id="analyst", speed=1.08,
+        instruct="A confident male news analyst in his 30s, clear and brisk."),
+    "skeptic": VoiceProfile(
+        persona_id="skeptic", speed=0.88,
+        instruct="A measured, cautious woman in her 50s, slow and deliberate, "
+                 "slightly gravelly."),
+    "historian": VoiceProfile(
+        persona_id="historian", speed=0.96,
+        instruct="An older man, warm and unhurried, with a resonant, "
+                 "storytelling tone."),
     "presenter": VoiceProfile(persona_id="presenter", speed=1.0),
 }
 

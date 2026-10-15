@@ -73,9 +73,16 @@ def build_app(model_id: str):
         speed = float(payload.get("speed", 1.0))
         ref_audio = payload.get("ref_audio")
         ref_text = payload.get("ref_text")
+        # A natural-language voice/delivery instruction ("a deep, slow male
+        # analyst"). Qwen3-TTS's `instruct` param shapes timbre and pacing from
+        # the description — genuine voice variation with no reference audio,
+        # unlike generate_voice_design which needs a -VoiceDesign checkpoint.
+        instruct = payload.get("instruct")
 
         model = get_model()
         kwargs = {"text": text, "speed": speed, "verbose": False}
+        if instruct:
+            kwargs["instruct"] = instruct
         if ref_audio:
             kwargs["ref_audio"] = ref_audio
             if ref_text:
