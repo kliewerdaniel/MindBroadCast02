@@ -216,15 +216,13 @@ class LLMAnalysisFactory:
         if position and packet.facts:
             from ..inference.editor import GroundingVerifier
             verifier = GroundingVerifier(packet.facts)
-            invented = verifier.introduces_new_entities(position)
-            if invented:
+            reason = verifier.fabrication_reason(position)
+            if reason:
                 return PersonaAnalysis(
                     persona_id=lens.persona_id,
                     question=packet.question,
                     position="",                 # dropped: ungrounded
-                    assumptions=[f"position dropped: introduced entity "
-                                 f"'{', '.join(invented[:3])}' not in the "
-                                 f"shared facts (§12.3)"],
+                    assumptions=[f"position dropped: {reason} (§12.3)"],
                     evidence_used=list(packet.evidence_references),
                     shared_facts_accepted=list(packet.facts),
                     confidence=0.0,

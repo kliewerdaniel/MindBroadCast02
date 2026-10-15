@@ -124,7 +124,7 @@ def test_empty_model_output_is_honest():
 
 
 def test_ungrounded_position_is_dropped():
-    """§12.3 floor: a persona that invents facts does not participate.
+    """§12.3 floor: a persona that invents a named entity does not participate.
 
     The historian live-run cited named 2016 figures absent from the facts.
     The prompt is not enough — a deterministic check drops the position so it
@@ -140,8 +140,42 @@ def test_ungrounded_position_is_dropped():
     assert a.position == ""               # dropped, not aired
     assert a.confidence == 0.0
     assert any("dropped" in x for x in a.assumptions)
+    assert any("Conway" in x for x in a.assumptions)
     # The shared facts are still recorded as accepted.
     assert a.shared_facts_accepted == list(PACKET.facts)
+
+
+def test_invented_number_dropped():
+    """A fabricated figure is invention even without a named entity.
+
+    "47 prior cases since 2019" introduces no proper noun, so the entity
+    check alone would miss it; the number check catches it.
+    """
+    lens = PersonaLens(persona_id="analyst", name="Analyst")
+    llm = FakeLLM({"Analyst": {
+        "position": "Her appointment reflects a pattern seen in 47 prior "
+                    "cases since 2019.",
+        "assumptions": [], "confidence": 0.7}})
+    factory = LLMAnalysisFactory(llm)
+    a = factory.make_function(lens)(PersonaConfig(id="analyst"), PACKET)
+    assert a.position == ""
+    assert a.confidence == 0.0
+    assert any("figure" in x for x in a.assumptions)
+
+
+def test_sourced_number_kept():
+    """A number that appears in the facts is not invention."""
+    lens = PersonaLens(persona_id="analyst", name="Analyst")
+    llm = FakeLLM({"Analyst": {
+        "position": "She raised her profile on Fox News in 2016.",
+        "assumptions": [], "confidence": 0.7}})
+    packet = SharedEvidencePacket(
+        question="q",
+        facts=["She raised her profile on Fox News in 2016."])
+    factory = LLMAnalysisFactory(llm)
+    a = factory.make_function(lens)(PersonaConfig(id="analyst"), packet)
+    assert a.position.startswith("She raised her profile")
+    assert a.confidence == 0.7
 
 
 def test_grounded_position_is_kept():

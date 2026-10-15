@@ -178,6 +178,32 @@ class GroundingVerifier:
             invented.append(w)
         return invented
 
+    def introduces_new_numbers(self, turn_text: str) -> List[str]:
+        """Numeric tokens absent from the source facts.
+
+        A fabricated figure is invention even without a named entity — "47
+        prior cases since 2019" invents both the count and the year while
+        introducing no proper noun, so the entity check alone would miss it.
+        """
+        return sorted(_numbers(turn_text) - self.source_numbers)
+
+    def fabrication_reason(self, turn_text: str) -> Optional[str]:
+        """Why a turn fails the grounding floor, or None if it passes.
+
+        The bounded, checkable classes of §12.3 invention: a named entity or a
+        figure not in the source. Interpretive vocabulary is not policed.
+        """
+        invented_entities = self.introduces_new_entities(turn_text)
+        if invented_entities:
+            return (f"introduced entity '{', '.join(invented_entities[:3])}' "
+                    f"not in the shared facts")
+        invented_numbers = self.introduces_new_numbers(turn_text)
+        if invented_numbers:
+            return (f"introduced figure(s) "
+                    f"'{', '.join(invented_numbers[:3])}' not in the shared "
+                    f"facts")
+        return None
+
 
 class EditorialComposer:
     """Turns grounded facts into a structured bulletin via the LLM.
