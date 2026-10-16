@@ -20,11 +20,6 @@ requests>=2.28.0
 
 # ── knowledge compilation ────────────────────────────────────────────
 spacy==3.8.7
-# thinc>=8.4.0,<8.5.0 pinned so GitHub Actions Linux runners (Python 3.13)
-# resolve a cp313 linux wheel instead of compiling spacy from source.
-# On a bare `python -m venv`, spacy 3.8.7+thinc 8.4 resolves to
-# prebuilt manylinux cp313 wheels; on older python it falls back to source.
-thinc>=8.4.0,<8.5.0
 pyyaml>=6.0
 
 # ── inference clients ────────────────────────────────────────────────
