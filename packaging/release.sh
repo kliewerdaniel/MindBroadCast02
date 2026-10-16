@@ -218,4 +218,16 @@ for a in "$MACOS_ART" "$LINUX_ART" "$WIN_ART"; do
     [ -n "$a" ] && echo "   artifact: $a"
 done
 
+# Fail closed. A toolchain that is missing produces no artifact, and a
+# release job that goes green with nothing attached is worse than a red one:
+# the earlier 'pyinstaller not installed' path exited 0 and published an
+# empty release. If this host was expected to build something and did not,
+# exit non-zero.
+if [ -z "$MACOS_ART" ] && [ -z "$LINUX_ART" ] && [ -z "$WIN_ART" ]; then
+    echo "ERROR: no artifact was produced on $(uname) (arch $ARCH)." >&2
+    echo "       Check that the toolchain for this OS is installed" >&2
+    echo "       (pyinstaller on macOS/Windows, fpm on Linux)." >&2
+    exit 1
+fi
+
 echo ">>> Release published to $OUT ($VER, $ARCH)"

@@ -44,6 +44,7 @@ jobs:
           gem install --no-document fpm
 
       - name: Build .deb
+        shell: bash
         env:
           VERSION: ${{ github.ref_name }}
         run: |
@@ -54,6 +55,8 @@ jobs:
           ./packaging/release.sh "${VERSION#v}" "$DEST" > "$GITHUB_WORKSPACE/_release.log" 2>&1
           cat "$GITHUB_WORKSPACE/_release.log"
           ls -la "$DEST"
+          # Fail closed: a release with no artifact must not go green.
+          ls "$DEST"/*.deb > /dev/null || { echo "::error::no .deb produced"; exit 1; }
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4

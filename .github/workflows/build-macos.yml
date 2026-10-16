@@ -48,6 +48,9 @@ jobs:
           . .venv/bin/activate
           python -m pip install --quiet --upgrade pip
           pip install --quiet -r requirements.txt pyinstaller
+          # release.sh probes `command -v pyinstaller`, so the venv must be on
+          # PATH for the build step too (each step is a fresh shell).
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Build .dmg
         env:
