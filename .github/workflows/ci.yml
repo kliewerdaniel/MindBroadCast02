@@ -23,10 +23,12 @@ jobs:
           python -m venv .venv
           . .venv/bin/activate
           pip install --quiet -r requirements.txt
-          # Pass 2 (entity extraction) needs the spaCy model data: a bare
-          # `pip install spacy` does not include it, and a fresh GitHub
-          # runner has no en_core_web_sm downloaded. Install it before tests.
-          python -m spacy download en_core_web_sm
+          # Pass 2 (entity extraction) needs the spaCy model data. A bare
+          # `pip install spacy` does not include it, and `spacy download` puts
+          # the model in a global cache that a fresh venv cannot see. Install
+          # the model package into the venv so `spacy.load()` can find it.
+          pip install --quiet --no-cache-dir \
+            "en-core-web-sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 
       - name: Lint (compile)
         run: |
