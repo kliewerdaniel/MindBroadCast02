@@ -161,6 +161,19 @@ ollama serve
 /opt/homebrew/bin/python3.14 -m core.inference.tts_server --port 7861
 ```
 
+**Optional — lighter back-ends.** Every model and TTS backend is modular.
+Run `brief-setup.py` to auto-detect what this machine can run and write
+`mindbroadcast.yaml`:
+
+```bash
+python3 brief-setup.py
+```
+
+It probes for Ollama + llama.cpp (LLM) and Qwen3-TTS / Piper / eSpeak / silence
+(TTS), prints what it found, then writes your choice. Pick whichever fits your
+machine — a $10 GPU or a $300 laptop runs the same station. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full backend matrix.
+
 > **Note:** MindBroadcast never starts or stops your model server. It reports a
 > dead endpoint and waits.
 
@@ -345,6 +358,28 @@ python3 -m pytest -q
 | `scripts/live_e2e.py` | End-to-end proof against a real model: ingest → compile → rank → compose → validate → synthesize. |
 | `scripts/ab_model.py` | A/B two models on the real longform prompt; scores repetition and coverage. |
 | `scripts/probe_feeds.py` | Verify candidate RSS feeds are live before curating them into the registry. |
+
+### CI/CD and GitHub Releases
+
+GitHub Actions builds the cross-OS release on each OS's own runner and attaches
+the artifacts to the GitHub Release when a version tag is pushed.
+
+* `.github/workflows/ci.yml` — base quality gate (check + tests), runs on every
+  push/PR. The `check` job is zero-dependency, which keeps the workflow valid
+  (GitHub rejects workflows where every job has `needs`). The `deb` and
+  `windows-exe` jobs are tag-gated and build on their host OS (PyInstaller
+  cannot cross-compile).
+* `.github/workflows/build-linux.yml` — `ubuntu-latest` (Debian container),
+  builds the **Linux `.deb`** with `fpm`.
+* `.github/workflows/build-os.yml` — Windows builds the **Windows `.exe`** with
+  PyInstaller on `windows-latest`; macOS's `.dmg` is built on `macos-latest`
+  runners in the same workflow set.
+
+Model weights and the Qwen3-TTS server are **not** bundled into the artifacts.
+The first user runs `brief-setup.py`, which auto-detects this machine's LLM +
+TTS and writes `mindbroadcast.yaml` and fetches or pre-installs the models it
+needs. See [docs/RELEASE.md](docs/RELEASE.md) and
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the release walkthrough.
 
 ---
 
