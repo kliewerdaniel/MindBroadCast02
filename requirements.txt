@@ -35,10 +35,11 @@ pytest>=8.0.0
 pytest-asyncio>=0.23.0
 respx>=0.21.0
 
-# ── deterministic NLP model data (Pass 2 entity extraction) ─────────────
-# The compiler's pass 2 cannot produce mentions without model data: the
-# GitHub Actions runner and a bare `python -m venv` install spacy without
-# loading `en_core_web_sm` first. Install it with:
+# ── NLP model data (Pass 2 entity extraction) ─────────────────────────
+# `en_core_web_sm` is NOT a pip-installable wheel for Python 3.13 on all
+# platforms (it has no Linux-manylinux cp313 distribution for the English
+# model), and the model is fetched at *run time*, not install time. The model
+# is registered separately from requirements.txt and loaded on demand by
+# EntityExtractor, which falls back to RuleBasedEntityExtractor when it is
+# absent. Install it on a machine that needs NER:
 #   python -m spacy download en_core_web_sm
-# so that `python -m pytest tests/` passes on a fresh venv out of the box.
-en-core-web-sm>=3.0.0
