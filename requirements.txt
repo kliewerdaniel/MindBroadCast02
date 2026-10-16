@@ -27,6 +27,14 @@ ollama>=0.1.0
 openai>=1.0.0
 numpy>=1.24.0
 
+# ── console (the listener web app) ───────────────────────────────────
+# core/inference/console.py is a FastAPI app served by uvicorn; the frozen
+# desktop build imports both. They were previously installed ad hoc, so the
+# PyInstaller build worked locally and failed in CI with
+# "Hidden import 'uvicorn.logging' not found".
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
 # ── desktop app ──────────────────────────────────────────────────────
 pywebview>=5.0.0
 

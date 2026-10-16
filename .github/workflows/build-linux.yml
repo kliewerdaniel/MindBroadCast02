@@ -62,7 +62,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mindbroadcast-linux-deb
-          path: "$GITHUB_WORKSPACE/dist/*.deb"
+          # `with:` is not a shell context — $GITHUB_WORKSPACE would be taken
+          # literally here and match nothing. Use the expression instead.
+          path: "${{ github.workspace }}/dist/*.deb"
           if-no-files-found: error
 
       - name: Attach to GitHub Release

@@ -71,13 +71,22 @@ jobs:
           hdiutil detach "$MP" >/dev/null
           chmod +x /tmp/mb-smoke
           SOVEREIGN_ALLOW_EXTERNAL_INFERENCE=0 /tmp/mb-smoke > /tmp/smoke.log 2>&1 &
+          UP=0
           for i in $(seq 1 30); do
             if curl -sf --max-time 3 http://127.0.0.1:7862/api/health >/dev/null; then
-              echo "console responded"; break
+              echo "console responded after ${i} attempt(s)"; UP=1; break
             fi
             sleep 2
           done
+          if [ "$UP" != "1" ]; then
+            echo "::error::frozen console never became reachable"
+            echo "--- /tmp/smoke.log ---"; cat /tmp/smoke.log
+            pkill -f mb-smoke || true
+            exit 1
+          fi
           curl -sf --max-time 5 http://127.0.0.1:7862/ | head -c 200
+          echo
+          curl -s -o /dev/null -w "styles.css HTTP %{http_code}\n" --max-time 5 http://127.0.0.1:7862/static/styles.css
           pkill -f mb-smoke || true
 
       - name: Upload .dmg artifact
