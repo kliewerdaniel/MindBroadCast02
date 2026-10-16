@@ -30,6 +30,15 @@ numpy>=1.24.0
 # ── desktop app ──────────────────────────────────────────────────────
 pywebview>=5.0.0
 
-# ── test harness ─────────────────────────────────────────────────────
+# test harness ───────────────────────────────────────────────────────────
 pytest>=8.0.0
+pytest-asyncio>=0.23.0
 respx>=0.21.0
+
+# ── deterministic NLP model data (Pass 2 entity extraction) ─────────────
+# The compiler's pass 2 cannot produce mentions without model data: the
+# GitHub Actions runner and a bare `python -m venv` install spacy without
+# loading `en_core_web_sm` first. Install it with:
+#   python -m spacy download en_core_web_sm
+# so that `python -m pytest tests/` passes on a fresh venv out of the box.
+en-core-web-sm>=3.0.0
