@@ -1,0 +1,34 @@
+name: Install stack
+description: >-
+  Create the virtualenv and install the full runtime stack plus the spaCy
+  model data. Single source of truth for CI installs, so the model-wheel
+  step cannot drift between workflows (a missing model silently degrades
+  Pass 2 entity extraction and fails 4 compiler tests).
+
+runs:
+  using: composite
+  steps:
+    - name: Create venv and install requirements
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m venv .venv
+        . .venv/bin/activate
+        python -m pip install --quiet --upgrade pip
+        pip install --quiet -r requirements.txt
+
+    - name: Install spaCy model into the venv
+      shell: bash
+      run: |
+        set -euo pipefail
+        . .venv/bin/activate
+        # Pass 2 (entity extraction) needs the model data. `spacy download`
+        # writes to a global cache a fresh venv cannot see, so install the
+        # model package into site-packages instead.
+        pip install --quiet --no-cache-dir \
+          "en-core-web-sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+        python - <<'PY'
+        import spacy
+        spacy.load("en_core_web_sm")
+        print("spaCy model loaded OK")
+        PY

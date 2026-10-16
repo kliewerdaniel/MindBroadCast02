@@ -19,16 +19,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install stack
-        run: |
-          python -m venv .venv
-          . .venv/bin/activate
-          pip install --quiet -r requirements.txt
-          # Pass 2 (entity extraction) needs the spaCy model data. A bare
-          # `pip install spacy` does not include it, and `spacy download` puts
-          # the model in a global cache that a fresh venv cannot see. Install
-          # the model package into the venv so `spacy.load()` can find it.
-          pip install --quiet --no-cache-dir \
-            "en-core-web-sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+        uses: ./.github/actions/install-stack
 
       - name: Lint (compile)
         run: |

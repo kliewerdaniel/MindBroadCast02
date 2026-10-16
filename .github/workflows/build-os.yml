@@ -22,10 +22,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install stack
-        run: |
-          python -m venv .venv
-          . .venv/bin/activate
-          pip install --quiet -r requirements.txt
+        uses: ./.github/actions/install-stack
 
       - name: Test (compile + unit + integration)
         run: |
