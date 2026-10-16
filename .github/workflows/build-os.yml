@@ -8,6 +8,30 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ── Base CI check (zero-dependency job required by GitHub for workflow validation) ──
+  # This job has no needs, so it always runs and keeps the workflow valid on
+  # a plain `push`/`pull_request` (before any tag-gated release job runs).
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install stack
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --quiet -r requirements.txt
+
+      - name: Test (compile + unit + integration)
+        run: |
+          . .venv/bin/activate
+          python -m pytest tests/ -q
+
   # ── Linux .deb (fpm) ──────────────────────────────────────────────────
   # Runs on Linux, but we want the .deb from this repo, not from the host.
   # We run the release script inside a fpm container on a Linux runner.
