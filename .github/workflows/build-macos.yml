@@ -61,16 +61,30 @@ jobs:
           ./packaging/release.sh "${VERSION#v}" "$GITHUB_WORKSPACE/dist"
           ls -la "$GITHUB_WORKSPACE/dist"
 
-      - name: Smoke-test the frozen binary
+      - name: Verify the .app bundle is launchable
         run: |
           set -euo pipefail
           DMG=$(ls "$GITHUB_WORKSPACE"/dist/*.dmg | head -1)
           MP=$(hdiutil attach "$DMG" -nobrowse -readonly | grep Volumes | awk '{print $3}')
-          BIN=$(find "$MP" -type f -path "*/MacOS/*" | head -1)
-          cp "$BIN" /tmp/mb-smoke
-          hdiutil detach "$MP" >/dev/null
-          chmod +x /tmp/mb-smoke
-          SOVEREIGN_ALLOW_EXTERNAL_INFERENCE=0 /tmp/mb-smoke > /tmp/smoke.log 2>&1 &
+          APP=$(find "$MP" -maxdepth 1 -name "*.app" | head -1)
+          echo "bundle: $APP"
+
+          # The single most common .app failure: Info.plist names an
+          # executable that is not in Contents/MacOS, and macOS then refuses
+          # to launch it with 'the application may be damaged or incomplete'.
+          DECLARED=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
+          echo "CFBundleExecutable = $DECLARED"
+          if [ ! -x "$APP/Contents/MacOS/$DECLARED" ]; then
+            echo "::error::Info.plist declares '$DECLARED' but Contents/MacOS holds: $(ls "$APP/Contents/MacOS/")"
+            hdiutil detach "$MP" >/dev/null || true
+            exit 1
+          fi
+          echo "bundle executable present"
+
+          # Launch it through LaunchServices, exactly as a user double-click
+          # would. Running the inner binary directly would bypass Info.plist
+          # and hide a bundle that cannot actually open.
+          open "$APP"
           UP=0
           for i in $(seq 1 30); do
             if curl -sf --max-time 3 http://127.0.0.1:7862/api/health >/dev/null; then
@@ -79,15 +93,16 @@ jobs:
             sleep 2
           done
           if [ "$UP" != "1" ]; then
-            echo "::error::frozen console never became reachable"
-            echo "--- /tmp/smoke.log ---"; cat /tmp/smoke.log
-            pkill -f mb-smoke || true
+            echo "::error::the .app launched but its console never became reachable"
+            pkill -f "MindBroadcast.app/Contents/MacOS" || true
+            hdiutil detach "$MP" >/dev/null || true
             exit 1
           fi
           curl -sf --max-time 5 http://127.0.0.1:7862/ | head -c 200
           echo
           curl -s -o /dev/null -w "styles.css HTTP %{http_code}\n" --max-time 5 http://127.0.0.1:7862/static/styles.css
-          pkill -f mb-smoke || true
+          pkill -f "MindBroadcast.app/Contents/MacOS" || true
+          hdiutil detach "$MP" >/dev/null || true
 
       - name: Upload .dmg artifact
         uses: actions/upload-artifact@v4

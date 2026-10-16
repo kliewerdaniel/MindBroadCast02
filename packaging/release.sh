@@ -57,9 +57,15 @@ if [ "$(uname)" = "Darwin" ]; then
     echo ">>> Building macOS .dmg (requires PyInstaller installed)"
     if command -v pyinstaller > /dev/null 2>&1; then
         cd "$ROOT"
-        APP_NAME="MindBroadcast-$ARCH"
+        # The bundle is MindBroadcast.app and the executable inside it MUST be
+        # named exactly CFBundleExecutable from Info.plist. macOS launches
+        # Contents/MacOS/<CFBundleExecutable>; if the names disagree it reports
+        # "the application may be damaged or incomplete" and never runs it.
+        # The architecture belongs in the .dmg filename, not the bundle name.
+        APP="MindBroadcast.app"
+        EXE="MindBroadcast"
         pyinstaller --noconfirm --onefile \
-            --name "$APP_NAME" \
+            --name "$EXE" \
             --paths "$ROOT" \
             --add-data "core/inference/console_static:core/inference/console_static" \
             --hidden-import "core.inference.console" \
@@ -72,22 +78,71 @@ if [ "$(uname)" = "Darwin" ]; then
             --hidden-import "core.config" \
             --hidden-import "core.inference.lightweight" \
             packaging/macos/console_wrapper.py
-        if [ -f "dist/$APP_NAME" ]; then
-            mkdir -p "$OUT/$APP_NAME.app/Contents/MacOS"
-            cp "dist/$APP_NAME" "$OUT/$APP_NAME.app/Contents/MacOS/"
-            cp "$ROOT/packaging/macos/Info.plist" \
-                "$OUT/$APP_NAME.app/Contents/"
+        if [ -f "dist/$EXE" ]; then
+            rm -rf "$OUT/$APP"
+            mkdir -p "$OUT/$APP/Contents/MacOS" "$OUT/$APP/Contents/Resources"
+            cp "dist/$EXE" "$OUT/$APP/Contents/MacOS/$EXE"
+            cp "$ROOT/packaging/macos/Info.plist" "$OUT/$APP/Contents/"
+
+            # Stamp the real version into the bundle rather than shipping the
+            # template's placeholder.
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" \
+                "$OUT/$APP/Contents/Info.plist" >/dev/null
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VER" \
+                "$OUT/$APP/Contents/Info.plist" >/dev/null
+
+            # Build the icon the plist references, so CFBundleIconFile is not
+            # a dangling key.
+            if command -v iconutil > /dev/null 2>&1 \
+               && [ -d "$ROOT/packaging/macos/icon.iconset" ]; then
+                if iconutil -c icns "$ROOT/packaging/macos/icon.iconset" \
+                        -o "$OUT/$APP/Contents/Resources/icon.icns" 2>/dev/null; then
+                    echo "   icon.icns built"
+                else
+                    /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" \
+                        "$OUT/$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+                fi
+            fi
+
+            # Fail closed: the bundle must contain the executable the plist
+            # names, or it is not launchable however well it builds.
+            DECLARED=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" \
+                "$OUT/$APP/Contents/Info.plist")
+            if [ ! -x "$OUT/$APP/Contents/MacOS/$DECLARED" ]; then
+                echo "ERROR: Info.plist declares CFBundleExecutable=$DECLARED" >&2
+                echo "       but Contents/MacOS/ has: $(ls "$OUT/$APP/Contents/MacOS/")" >&2
+                exit 1
+            fi
+            echo "   bundle executable '$DECLARED' present"
+
+            # Sign the bundle (ad-hoc). PyInstaller signs the inner binary, but
+            # signing the bundle is what binds Info.plist; without it the
+            # signature does not cover the bundle and Gatekeeper is harsher.
+            if command -v codesign > /dev/null 2>&1; then
+                codesign --force --sign - "$OUT/$APP" 2>/dev/null \
+                    && echo "   ad-hoc signed" \
+                    || echo "   (codesign failed; bundle left unsigned)"
+            fi
+
+            # Stage the .app next to an /Applications symlink so the DMG opens
+            # with the usual drag-to-install layout.
+            STAGE_DMG="$(mktemp -d)"
+            cp -R "$OUT/$APP" "$STAGE_DMG/"
+            ln -s /Applications "$STAGE_DMG/Applications"
+
             # hdiutil's auto-sizing fails on this host ("No space left on
             # device" while the volume is still empty), so size the image
             # explicitly: the bundle plus generous headroom, in MB.
-            APPMB=$(( $(du -sm "$OUT/$APP_NAME.app" | cut -f1) + 40 ))
+            APPMB=$(( $(du -sm "$STAGE_DMG" | cut -f1) + 40 ))
             hdiutil create -volname "MindBroadcast" -srcfolder \
-                "$OUT/$APP_NAME.app" \
+                "$STAGE_DMG" \
                 -ov -format UDZO -size "${APPMB}m" \
                 "$OUT/MindBroadcast-$VER-macos-$ARCH.dmg"
+            rm -rf "$STAGE_DMG"
             echo "   built $OUT/MindBroadcast-$VER-macos-$ARCH.dmg"
         else
-            echo "   Skipping macOS .dmg (PyInstaller did not produce the binary)"
+            echo "ERROR: PyInstaller did not produce dist/$EXE" >&2
+            exit 1
         fi
     else
         echo ">>> SKIP macOS .dmg: pyinstaller not installed"
