@@ -1,0 +1,35 @@
+name: Brief Setup
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install stack
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --quiet -r requirements.txt
+
+      - name: Lint (compile)
+        run: |
+          . .venv/bin/activate
+          python -m py_compile $(git ls-files '*.py') || true
+
+      - name: Test
+        run: |
+          . .venv/bin/activate
+          python -m pytest tests/ -q

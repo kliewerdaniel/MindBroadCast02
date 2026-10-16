@@ -7,15 +7,6 @@
 #   ├── MindBroadcast-<version>-windows-x86_64.exe    (built on Windows, PyInstaller)
 #   └── release-manifest.json
 #
-# Assumptions are marked below; they describe the machine that BUILDS the
-# artifact, not what the artifact itself does. The .app, the .deb and the .exe
-# are each produced on the host they will run on, because PyInstaller cannot
-# cross-compile.
-#
-#   1. brief-setup.py  ... the one-file, one-decision setup (LLM + TTS)
-#   2. console_wrapper.py  ... the PyInstaller one-file entry
-#   3. release.sh    ... the model choice, artifacts, and manifest
-#
 # Assumptions
 #   macOS: build on macOS -> .app + .dmg.
 #   Linux: build on Linux -> .deb via fpm.
@@ -34,28 +25,24 @@ VER="${1:-1.0.0}"
 mkdir -p "$OUT"
 
 # ── 1. brief-setup.py ────────────────────────────────────────────────────
-# The user-visible one-file decision-maker. Generates mindbroadcast.yaml
-# after detecting every back-end this machine can run. Run it directly:
+# The user-visible one-file decision-maker. Generates mindbroadcast.yaml after
+# detecting every back-end this machine can run. Run it directly:
 #       python3 brief-setup.py
-# It is generated at the repo root by gen-release-pipeline.sh; nothing here
-# regenerates it.
+# Nothing here regenerates it; the user (or the first-run console) runs it.
 
 # ── 2. console_wrapper.py: the PyInstaller one-file entry ───────────────
-# (generated in packaging/macos/console_wrapper.py; used by the macOS build)
+# The entry point for the desktop window. It is the same file for all three
+# OS builds; only the PyInstaller --add-data separator differs.
 
-# ── 3. brief-setup.py reporter ──────────────────────────────────────────
-# Ask the user which back-end this machine came with. Nothing hidden: every
-# choice is printed with its true trade-off, and the config is written to
-# cwd/mindbroadcast.yaml.
+# ── 3. brief-setup reporter ─────────────────────────────────────────────
 if [ -f "$ROOT/brief-setup.py" ]; then
-    echo ">>> brief-setup.py detected. Run it to pick your models."
+    echo ">>> brief-setup.py detected. Run it to pick your models:"
     echo ">>>   python3 brief-setup.py"
 else
     echo ">>> brief-setup.py not found. Run gen-release-pipeline.sh first."
 fi
 
 # ── 4. macOS .dmg ───────────────────────────────────────────────────────
-# Runs on macOS. Requires PyInstaller.
 if [ "$(uname)" = "Darwin" ]; then
     echo ">>> Building macOS .dmg (requires PyInstaller installed)"
     if command -v pyinstaller > /dev/null 2>&1; then
@@ -87,10 +74,10 @@ if [ "$(uname)" = "Darwin" ]; then
 fi
 
 # ── 5. Linux .deb ───────────────────────────────────────────────────────
-# Runs on Linux. Requires fpm.
-if command -v fpm > /dev/null 2>&1; then
-    echo ">>> Building Linux .deb"
-    cat > "$ROOT/packaging/postinst" <<'POST'
+if [ "$(uname)" = "Linux" ]; then
+    echo ">>> Building Linux .deb (requires fpm)"
+    if command -v fpm > /dev/null 2>&1; then
+        cat > "$ROOT/packaging/postinst" <<'POST'
 #!/usr/bin/env bash
 # postinst: nothing needed here (the station is user-run).
 POST
@@ -104,37 +91,57 @@ PRE
 MindBroadcast - a persistent, autonomous, news-driven broadcasting station.
 Site: https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast
 DESC
-    fpm -s dir -t deb \
-        --name mindbroadcast \
-        --version "$VER" \
-        --architectureamd64 \
-        --description "A persistent, autonomous, news-driven broadcasting station" \
-        --url "https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast" \
-        --vendor "MindBroadcast" \
-        --license "MIT" \
-        --maintainer "Daniel Kliewer" \
-        --category "science" \
-        --deb-user mindbroadcast \
-        --after-install packaging/postinst \
-        --before-remove packaging/prerm \
-        "$ROOT/core" "$ROOT/scripts" "$ROOT/docs" \
-        "$ROOT/requirements.txt" \
-        --description-file packaging/deb-description.txt \
-        -p "$OUT" -C "$ROOT/release"
-    echo "   built $OUT/mindbroadcast_${VER}_amd64.deb"
-else
-    echo ">>> SKIP Linux .deb: fpm not installed (sudo apt install fpm)"
+        fpm -s dir -t deb \
+            --name mindbroadcast \
+            --version "$VER" \
+            --architectureamd64 \
+            --description "A persistent, autonomous, news-driven broadcasting station" \
+            --url "https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast" \
+            --vendor "MindBroadcast" \
+            --license "MIT" \
+            --maintainer "Daniel Kliewer" \
+            --category "science" \
+            --deb-user mindbroadcast \
+            --after-install packaging/postinst \
+            --before-remove packaging/prerm \
+            "$ROOT/core" "$ROOT/scripts" "$ROOT/docs" \
+            "$ROOT/requirements.txt" \
+            --description-file packaging/deb-description.txt \
+            -p "$OUT" -C "$ROOT/release"
+        echo "   built $OUT/mindbroadcast_${VER}_amd64.deb"
+    else
+        echo ">>> SKIP Linux .deb: fpm not installed (sudo apt install fpm)"
+    fi
 fi
 
 # ── 6. Windows .exe ─────────────────────────────────────────────────────
-# Runs on Windows. PyInstaller cannot cross-compile, so this section is a
-# no-op here; the user runs it on Windows with:
-#   pyinstaller --onefile --name MindBroadcast-win
-#   --add-data "core/inference/console_static;core/inference/console_static" \
-#   packaging/macos/console_wrapper.py
-if [ "$(uname)" = "Darwin" ] && command -v pyinstaller > /dev/null 2>&1; then
-    echo ">>> NOT building Windows .exe here (PyInstaller cannot cross-compile)"
-    echo "    Run this same script on a Windows host instead."
+# Runs on Windows. PyInstaller cannot cross-compile, so this branch runs on a
+# Windows runner where pyinstaller is installed.
+if [ "$(uname)" = "MINGW" ] || [ "$(uname)" = "Windows_NT" ]; then
+    echo ">>> Building Windows .exe (requires PyInstaller installed)"
+    if command -v pyinstaller > /dev/null 2>&1; then
+        # copy the Python entry to a Windows-friendly location and use ; as
+        # the data separator on Windows (Git Bash).
+        cp "$ROOT/packaging/macos/console_wrapper.py" \
+            "$ROOT/packaging/windows/console_wrapper.py"
+        mkdir -p "$ROOT/packaging/windows"
+        cd "$ROOT"
+        pyinstaller --noconfirm --onefile \
+            --name "MindBroadcast-win-x86_64" \
+            --add-data "core/inference/console_static;core/inference/console_static" \
+            --hidden-import "pywebview" \
+            --hidden-import "core.config" \
+            --hidden-import "core.inference.lightweight" \
+            packaging/windows/console_wrapper.py
+        if [ -f "dist/MindBroadcast-win-x86_64.exe" ]; then
+            cp dist/MindBroadcast-win-x86_64.exe "$OUT/MindBroadcast-$VER-win-x86_64.exe"
+            echo "   built $OUT/MindBroadcast-$VER-win-x86_64.exe"
+        else
+            echo "   Skipping Windows .exe (PyInstaller did not produce the binary)"
+        fi
+    else
+        echo ">>> SKIP Windows .exe: pyinstaller not installed"
+    fi
 fi
 
 # ── 7. publish manifest ─────────────────────────────────────────────────
