@@ -68,9 +68,75 @@ The system runs itself. Start it, and it watches, decides, speaks, and moves on
 
 ---
 
-## Quick start
+## Quick start — the macOS app (no code)
+
+The easiest way to run MindBroadcast is as a native application. Download the
+released bundle, open it once, and the station runs.
+
+```bash
+# 1. Pull the bundle
+git clone https://github.com/your-org/MindBroadcast.git
+cd MindBroadcast
+
+# 2. Create a virtualenv and install the single installable stack
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Add the models (all localhost and fail-closed)
+ollama pull qwen3:30b-a3b
+ollama pull nomic-embed-text
+
+# 4. Launch the console, then the desktop app
+python3 -m uvicorn core.inference.console:app --host 127.0.0.1 --port 7862
+# Open http://127.0.0.1:7862, click once to enable audio, then press "Start the station".
+
+# Desktop app (macOS). Runs the console in a native window and starts the TTS
+# server if it is not already running:
+open ./packaging/macos/MindBroadcast.app
+```
+
+The bundle is built from the project's own virtualenv with
+`packaging/macos/build.sh --run`:
+
+```bash
+./packaging/macos/build.sh --run
+open build/MindBroadcast.app
+```
+
+The first launch needs a right-click → Open, because the app is unsigned:
+
+```bash
+xattr -dr com.apple.quarantine build/MindBroadcast.app
+```
+
+| What you get | What it does |
+|---|---|
+| `core/desktop.py` | The desktop shell: resolves the project root from the bundle, starts the TTS + console servers if they are not already running, and opens a `pywebview` window on the console. |
+| `packaging/macos/` | `Info.plist` (bundle ID `com.kliewerdaniel.mindbroadcast`, macOS 13+ requirement, local-networking ATS exception), `build.sh`, and a 10-slice `icon.icns`. |
+
+- The app is **localhost-only** by the same fail-closed rule as the servers.
+- The console shows a "CLICK ANYWHERE TO ENABLE SOUND" overlay; the first
+  click/keypress unlocks playback.
+- Closing the window stops only the servers the app started; a server you
+  started yourself keeps running.
+
+Under the hood, `core/desktop.py` is a thin shell: it resolves the project root
+from the bundle's location, starts the Qwen3-TTS server and the console with the
+project's virtualenv, and hands the console to WebKit. All editorial, epistemic,
+and broadcast logic lives in the console/runtime modules — a defect in the
+broadcast is never "the desktop app's problem". Nothing is managed or launched
+for you beyond the two servers this app owns.
+
+---
+
+## What this is
+
+MindBroadcast is not a podcast generator that renders a fixed script. It is a
+continuously running information system.
 
 ### 1. Install
+
+The app is built from a single virtualenv:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -106,19 +172,6 @@ python3 -m uvicorn core.inference.console:app --host 127.0.0.1 --port 7862
 
 Open **http://127.0.0.1:7862**, **click once** to enable audio (browsers block
 autoplay until a user gesture), then press **Start the station**.
-
-Override the model with `MBS_MODEL`, e.g. `MBS_MODEL=qwen3:4b`.
-
-### The console
-
-![The MindBroadcast console](docs/images/console.jpg)
-
-The signal field carries the station's mental state — dormant, watching,
-composing, speaking (reacting to the real audio spectrum), or silent. Because
-the whole station speaks in one voice, the field carries what the voice cannot:
-each persona pulls it toward its own hue, so the mind behind the speech is
-visible. The world-model panel shows the eight regions the station watches,
-and the live cycle counts show what it observed, compiled, and decided.
 
 ### 4. Compare models
 

@@ -1,6 +1,8 @@
 # Synthesized audio and live-run artifacts (regenerable via scripts/live_e2e.py)
 data/*.wav
 data/*.db
+data/segments/*.wav
+data/segments/*.png
 
 # Python
 __pycache__/
@@ -11,3 +13,4 @@ __pycache__/
 # and are fetched once, never at runtime.
 *.onnx
 *.bin
+build/
