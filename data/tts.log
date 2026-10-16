@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/danielkliewer/Projects/MindBroadCast02/core/inference/tts_server.py", line 120, in <module>
+    main()
+    ~~~~^^
+  File "/Users/danielkliewer/Projects/MindBroadCast02/core/inference/tts_server.py", line 113, in main
+    app = build_app(args.model)
+  File "/Users/danielkliewer/Projects/MindBroadCast02/core/inference/tts_server.py", line 46, in build_app
+    from flask import Flask, request, Response
+ModuleNotFoundError: No module named 'flask'

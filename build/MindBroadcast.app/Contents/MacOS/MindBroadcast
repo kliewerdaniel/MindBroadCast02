@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# The app's executable: resolve the project root from this bundle's location,
+# then run the desktop shell with the project's virtualenv.
+set -euo pipefail
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$APP_DIR/../../.." && pwd)"
+
+# A .app sitting inside the project (build/…) resolves to the project. If it
+# has been copied elsewhere, fall back to the recorded path.
+if [[ ! -d "$PROJECT_ROOT/.venv" && -f "$APP_DIR/Contents/Resources/project_root" ]]; then
+    PROJECT_ROOT="$(cat "$APP_DIR/Contents/Resources/project_root")"
+fi
+
+cd "$PROJECT_ROOT"
+exec "$PROJECT_ROOT/.venv/bin/python" -m core.desktop
