@@ -94,7 +94,7 @@ DESC
         fpm -s dir -t deb \
             --name mindbroadcast \
             --version "$VER" \
-            --architectureamd64 \
+            --architecture amd64 \
             --description "A persistent, autonomous, news-driven broadcasting station" \
             --url "https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast" \
             --vendor "MindBroadcast" \
@@ -104,10 +104,9 @@ DESC
             --deb-user mindbroadcast \
             --after-install packaging/postinst \
             --before-remove packaging/prerm \
-            "$ROOT/core" "$ROOT/scripts" "$ROOT/docs" \
-            "$ROOT/requirements.txt" \
+            core scripts docs requirements.txt \
             --description-file packaging/deb-description.txt \
-            -p "$OUT" -C "$ROOT/release"
+            -p "$OUT" -C "$ROOT"
         echo "   built $OUT/mindbroadcast_${VER}_amd64.deb"
     else
         echo ">>> SKIP Linux .deb: fpm not installed (sudo apt install fpm)"

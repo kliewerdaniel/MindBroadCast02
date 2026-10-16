@@ -1,16 +1,29 @@
 # Synthesized audio and live-run artifacts (regenerable via scripts/live_e2e.py)
 data/*.wav
 data/*.db
-data/segments/*.wav
-data/segments/*.png
+data/*.db-shm
+data/*.db-wal
+data/*.aired.json
+data/*.log
+data/segments/
 
 # Python
 __pycache__/
 *.pyc
 .venv/
 
+# Build outputs
+build/
+dist/
+releases/
+
+# macOS
+.DS_Store
+
+# pip download dumps — dependencies come from requirements.txt, never the tree
+*.whl
+
 # TTS/LLM model weights are NOT committed — they live in the HF/Ollama cache
 # and are fetched once, never at runtime.
 *.onnx
 *.bin
-build/
