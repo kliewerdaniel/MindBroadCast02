@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+# prerm: nothing needed here (the daemon is user-run).

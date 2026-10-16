@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+# postinst: nothing needed here (the station is user-run).

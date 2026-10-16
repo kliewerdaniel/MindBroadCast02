@@ -108,26 +108,38 @@ POST
 # prerm: nothing needed here (the daemon is user-run).
 PRE
     chmod +x "$ROOT/packaging/prerm"
-    cat > "$ROOT/packaging/deb-description.txt" <<'DESC'
-MindBroadcast - a persistent, autonomous, news-driven broadcasting station.
-Site: https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast
-DESC
+        # Stage a clean copy first. fpm's --exclude did not match
+        # __pycache__/*.pyc in testing, and a package must not ship .pyc
+        # compiled by whatever Python ran the build. Copying the source into
+        # a scratch tree (minus the junk) is deterministic.
+        STAGE="$(mktemp -d)"
+        trap 'rm -rf "$STAGE"' EXIT
+        for item in core scripts docs requirements.txt; do
+            [ -e "$ROOT/$item" ] || continue
+            cp -R "$ROOT/$item" "$STAGE/"
+        done
+        find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+        find "$STAGE" -name "*.pyc" -delete 2>/dev/null || true
+        find "$STAGE" -name ".DS_Store" -delete 2>/dev/null || true
+        echo "   staged $(find "$STAGE" -type f | wc -l | tr -d ' ') files"
+
+        # fpm has no --description-file, and every flag must precede the first
+        # path argument.
         fpm -s dir -t deb \
             --name mindbroadcast \
             --version "$VER" \
             --architecture "$DEB_ARCH" \
-            --description "A persistent, autonomous, news-driven broadcasting station" \
+            --description "MindBroadcast - a persistent, autonomous, news-driven broadcasting station." \
             --url "https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast" \
             --vendor "MindBroadcast" \
             --license "MIT" \
             --maintainer "Daniel Kliewer" \
             --category "science" \
             --deb-user mindbroadcast \
-            --after-install packaging/postinst \
-            --before-remove packaging/prerm \
-            core scripts docs requirements.txt \
-            --description-file packaging/deb-description.txt \
-            -p "$OUT" -C "$ROOT"
+            --after-install "$ROOT/packaging/postinst" \
+            --before-remove "$ROOT/packaging/prerm" \
+            -p "$OUT" -C "$STAGE" \
+            core scripts docs requirements.txt
         echo "   built $OUT/mindbroadcast_${VER}_${DEB_ARCH}.deb"
     else
         echo ">>> SKIP Linux .deb: fpm not installed (sudo apt install fpm)"

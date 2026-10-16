@@ -1,0 +1,2 @@
+MindBroadcast - a persistent, autonomous, news-driven broadcasting station.
+Site: https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast
