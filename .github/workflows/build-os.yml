@@ -3,14 +3,14 @@ name: Brief Setup (Windows)
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 jobs:
-  # ── Base CI check (zero-dependency job required by GitHub for workflow validation) ──
-  # This job has no needs, so it always runs and keeps the workflow valid on
-  # a plain `push`/`pull_request` (before any tag-gated release job runs).
+  # Zero-dependency base job: GitHub rejects a workflow whose every job has
+  # `needs`, so this always runs and keeps the file valid on a branch push.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -29,53 +29,17 @@ jobs:
           . .venv/bin/activate
           python -m pytest tests/ -q
 
-  # ── Linux .deb (fpm) ──────────────────────────────────────────────────
-  # Runs on Linux, but we want the .deb from this repo, not from the host.
-  # We run the release script inside a fpm container on a Linux runner.
-  deb:
-    runs-on: ubuntu-latest
-    needs: check
-    # Only run when a tag is pushed (a release). Keep it out of every CI run
-    # so a clean master build stays fast. Trigger on push to a tag.
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    container:
-      image: debian:bookworm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build toolchain + fpm
-        run: |
-          apt-get update -qq
-          apt-get install -y -qq ruby-dev build-essential dpkg
-          gem install --no-document fpm
-
-      - name: Build .deb + log
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          DEST="$GITHUB_WORKSPACE/dist"
-          mkdir -p "$DEST"
-          ./packaging/release.sh "$VERSION" "$DEST" > "$GITHUB_WORKSPACE/_release.log" 2>&1
-          cat "$GITHUB_WORKSPACE/_release.log"
-          cp "$GITHUB_WORKSPACE/_release.log" "$GITHUB_WORKSPACE/release-check.log"
-
-      - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mindbroadcast_${{ github.ref_name }}_amd64.deb
-          path: "$GITHUB_WORKSPACE/dist"
-          if-no-files-found: ignore
-
   # ── Windows .exe (PyInstaller on Windows) ─────────────────────────────
-  # The first time this workflow runs it has no artifacts to attach, so we do
-  # the actual building here on a Windows runner and upload the .exe.
+  # PyInstaller cannot cross-compile, so the .exe is built on a Windows
+  # runner. The Linux .deb lives in build-linux.yml — one builder per OS, so
+  # two jobs never race to publish the same artifact.
   windows-exe:
     runs-on: windows-latest
     needs: check
-    # Only build the .exe on a tag push. On a plain branch push, we still want
-    # the CI green; the .exe is built when the user votes for it on Windows.
+    # Only build on a version tag — a release, not every branch push.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -84,24 +48,34 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install PyInstaller + console deps
+      - name: Install PyInstaller + runtime deps
         run: |
           python -m venv .venv
           .\.venv\Scripts\activate
-          pip install --quiet pyinstaller
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet -r requirements.txt pyinstaller
 
       - name: Build Windows .exe
+        shell: bash
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          set -e
-          ./packaging/release.sh "$VERSION" "$GITHUB_WORKSPACE/dist" > "$GITHUB_WORKSPACE/_release.log" 2>&1
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          chmod +x packaging/release.sh
+          ./packaging/release.sh "${VERSION#v}" "$GITHUB_WORKSPACE/dist" > "$GITHUB_WORKSPACE/_release.log" 2>&1
           cat "$GITHUB_WORKSPACE/_release.log"
-          cp "$GITHUB_WORKSPACE/_release.log" "$GITHUB_WORKSPACE/release-check.log"
+          ls -la "$GITHUB_WORKSPACE/dist"
 
       - name: Upload Windows .exe
         uses: actions/upload-artifact@v4
         with:
-          name: MindBroadcast-${{ github.ref_name }}-win-x86_64.exe
-          path: "$GITHUB_WORKSPACE/dist/MindBroadcast-${{ github.ref_name }}-win-x86_64.exe"
-          if-no-files-found: ignore
+          name: mindbroadcast-windows-exe
+          path: "${{ github.workspace }}/dist/*.exe"
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "${{ github.workspace }}/dist/*.exe"
+          generate_release_notes: true

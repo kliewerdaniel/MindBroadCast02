@@ -2,9 +2,9 @@
 # ── Multi-OS release pipeline for MindBroadcast ────────────────────────
 # Produces (artifacts built on the host they run on):
 #   releases/
-#   ├── MindBroadcast-<version>-macos-x86_64.dmg      (built on macOS)
-#   ├── MindBroadcast-<version>-linux-x86_64.deb      (built on Linux, via fpm)
-#   ├── MindBroadcast-<version>-windows-x86_64.exe    (built on Windows, PyInstaller)
+#   ├── MindBroadcast-<version>-macos-<arch>.dmg     (built on macOS)
+#   ├── mindbroadcast_<version>_<arch>.deb           (built on Linux, via fpm)
+#   ├── MindBroadcast-<version>-win-<arch>.exe       (built on Windows, PyInstaller)
 #   └── release-manifest.json
 #
 # Assumptions
@@ -19,10 +19,20 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 OUT="${2:-$ROOT/releases}"
 VER="${1:-1.0.0}"
 mkdir -p "$OUT"
+
+# Artifact names carry the real architecture. A release built on an M-series
+# Mac is arm64; naming it x86_64 would hand the downloader the wrong binary.
+case "$(uname -m)" in
+    arm64|aarch64) ARCH="arm64" ;;
+    x86_64|amd64)  ARCH="x86_64" ;;
+    *)             ARCH="$(uname -m)" ;;
+esac
+DEB_ARCH="amd64"
+[ "$ARCH" = "arm64" ] && DEB_ARCH="arm64"
 
 # ── 1. brief-setup.py ────────────────────────────────────────────────────
 # The user-visible one-file decision-maker. Generates mindbroadcast.yaml after
@@ -47,24 +57,35 @@ if [ "$(uname)" = "Darwin" ]; then
     echo ">>> Building macOS .dmg (requires PyInstaller installed)"
     if command -v pyinstaller > /dev/null 2>&1; then
         cd "$ROOT"
+        APP_NAME="MindBroadcast-$ARCH"
         pyinstaller --noconfirm --onefile \
-            --name "MindBroadcast-mac-x86_64" \
-            --add-data "core/inference/console_static:$(pwd)/core/inference/console_static" \
+            --name "$APP_NAME" \
+            --paths "$ROOT" \
+            --add-data "core/inference/console_static:core/inference/console_static" \
+            --hidden-import "core.inference.console" \
+            --hidden-import "uvicorn.logging" \
+            --hidden-import "uvicorn.loops.auto" \
+            --hidden-import "uvicorn.protocols.http.auto" \
+            --hidden-import "uvicorn.protocols.websockets.auto" \
+            --hidden-import "uvicorn.lifespan.on" \
             --hidden-import "pywebview" \
             --hidden-import "core.config" \
             --hidden-import "core.inference.lightweight" \
             packaging/macos/console_wrapper.py
-        if [ -f "dist/MindBroadcast-mac-x86_64" ]; then
-            mkdir -p "$OUT/MindBroadcast-mac-x86_64.app/Contents/MacOS"
-            cp dist/MindBroadcast-mac-x86_64 \
-                "$OUT/MindBroadcast-mac-x86_64.app/Contents/MacOS/"
-            cp -r "$ROOT/packaging/macos/Info.plist" \
-                "$OUT/MindBroadcast-mac-x86_64.app/Contents/"
+        if [ -f "dist/$APP_NAME" ]; then
+            mkdir -p "$OUT/$APP_NAME.app/Contents/MacOS"
+            cp "dist/$APP_NAME" "$OUT/$APP_NAME.app/Contents/MacOS/"
+            cp "$ROOT/packaging/macos/Info.plist" \
+                "$OUT/$APP_NAME.app/Contents/"
+            # hdiutil's auto-sizing fails on this host ("No space left on
+            # device" while the volume is still empty), so size the image
+            # explicitly: the bundle plus generous headroom, in MB.
+            APPMB=$(( $(du -sm "$OUT/$APP_NAME.app" | cut -f1) + 40 ))
             hdiutil create -volname "MindBroadcast" -srcfolder \
-                "$OUT/MindBroadcast-mac-x86_64.app" \
-                -ov -format UDZO \
-                "$OUT/MindBroadcast-$VER-macos-x86_64.dmg"
-            echo "   built $OUT/MindBroadcast-$VER-macos-x86_64.dmg"
+                "$OUT/$APP_NAME.app" \
+                -ov -format UDZO -size "${APPMB}m" \
+                "$OUT/MindBroadcast-$VER-macos-$ARCH.dmg"
+            echo "   built $OUT/MindBroadcast-$VER-macos-$ARCH.dmg"
         else
             echo "   Skipping macOS .dmg (PyInstaller did not produce the binary)"
         fi
@@ -94,7 +115,7 @@ DESC
         fpm -s dir -t deb \
             --name mindbroadcast \
             --version "$VER" \
-            --architecture amd64 \
+            --architecture "$DEB_ARCH" \
             --description "A persistent, autonomous, news-driven broadcasting station" \
             --url "https://www.danielkliewer.com/blog/2026-10-12-mindbroadcast" \
             --vendor "MindBroadcast" \
@@ -107,7 +128,7 @@ DESC
             core scripts docs requirements.txt \
             --description-file packaging/deb-description.txt \
             -p "$OUT" -C "$ROOT"
-        echo "   built $OUT/mindbroadcast_${VER}_amd64.deb"
+        echo "   built $OUT/mindbroadcast_${VER}_${DEB_ARCH}.deb"
     else
         echo ">>> SKIP Linux .deb: fpm not installed (sudo apt install fpm)"
     fi
@@ -115,54 +136,74 @@ fi
 
 # ── 6. Windows .exe ─────────────────────────────────────────────────────
 # Runs on Windows. PyInstaller cannot cross-compile, so this branch runs on a
-# Windows runner where pyinstaller is installed.
-if [ "$(uname)" = "MINGW" ] || [ "$(uname)" = "Windows_NT" ]; then
+# Windows runner where pyinstaller is installed. Git Bash reports `uname` as
+# e.g. MINGW64_NT-10.0-22631, so match on the prefix rather than equality.
+case "$(uname)" in
+MINGW*|MSYS*|CYGWIN*|Windows_NT)
     echo ">>> Building Windows .exe (requires PyInstaller installed)"
     if command -v pyinstaller > /dev/null 2>&1; then
         # copy the Python entry to a Windows-friendly location and use ; as
         # the data separator on Windows (Git Bash).
+        mkdir -p "$ROOT/packaging/windows"
         cp "$ROOT/packaging/macos/console_wrapper.py" \
             "$ROOT/packaging/windows/console_wrapper.py"
-        mkdir -p "$ROOT/packaging/windows"
         cd "$ROOT"
         pyinstaller --noconfirm --onefile \
-            --name "MindBroadcast-win-x86_64" \
+            --name "MindBroadcast-win-$ARCH" \
+            --paths "$ROOT" \
             --add-data "core/inference/console_static;core/inference/console_static" \
+            --hidden-import "core.inference.console" \
+            --hidden-import "uvicorn.logging" \
+            --hidden-import "uvicorn.loops.auto" \
+            --hidden-import "uvicorn.protocols.http.auto" \
+            --hidden-import "uvicorn.protocols.websockets.auto" \
+            --hidden-import "uvicorn.lifespan.on" \
             --hidden-import "pywebview" \
             --hidden-import "core.config" \
             --hidden-import "core.inference.lightweight" \
             packaging/windows/console_wrapper.py
-        if [ -f "dist/MindBroadcast-win-x86_64.exe" ]; then
-            cp dist/MindBroadcast-win-x86_64.exe "$OUT/MindBroadcast-$VER-win-x86_64.exe"
-            echo "   built $OUT/MindBroadcast-$VER-win-x86_64.exe"
+        if [ -f "dist/MindBroadcast-win-$ARCH.exe" ]; then
+            cp "dist/MindBroadcast-win-$ARCH.exe" "$OUT/MindBroadcast-$VER-win-$ARCH.exe"
+            echo "   built $OUT/MindBroadcast-$VER-win-$ARCH.exe"
         else
             echo "   Skipping Windows .exe (PyInstaller did not produce the binary)"
         fi
     else
         echo ">>> SKIP Windows .exe: pyinstaller not installed"
     fi
-fi
+    ;;
+esac
 
 # ── 7. publish manifest ─────────────────────────────────────────────────
+# Collect whatever this host actually produced and write it as real JSON.
+MACOS_ART=""; LINUX_ART=""; WIN_ART=""
+for f in "$OUT"/MindBroadcast-*-macos-*.dmg; do
+    [ -e "$f" ] || continue; MACOS_ART="$(basename "$f")"
+done
+for f in "$OUT"/mindbroadcast_"${VER}"_*.deb; do
+    [ -e "$f" ] || continue; LINUX_ART="$(basename "$f")"
+done
+for f in "$OUT"/MindBroadcast-*-win-*.exe; do
+    [ -e "$f" ] || continue; WIN_ART="$(basename "$f")"
+done
+
+json_str() { [ -n "$1" ] && printf '"%s"' "$1" || printf 'null'; }
+
 cat > "$OUT/release-manifest.json" <<MANIFEST
 {
   "name": "MindBroadcast",
   "version": "$VER",
-  "os": { "macos": null, "linux": null, "windows": null },
-  "contents": []
+  "arch": "$ARCH",
+  "os": {
+    "macos": $(json_str "$MACOS_ART"),
+    "linux": $(json_str "$LINUX_ART"),
+    "windows": $(json_str "$WIN_ART")
+  }
 }
 MANIFEST
 
-for f in "$OUT"/MindBroadcast-*-macos-x86_64.dmg \
-         "$OUT"/mindbroadcast_"${VER}"_amd64.deb \
-         "$OUT"/MindBroadcast-*-win-*.exe; do
-    [ -e "$f" ] || continue
-    case "$f" in
-        *macos*) MANIFEST="os.macos=$(basename "$f")";;
-        *linux*) MANIFEST="os.linux=$(basename "$f")";;
-        *win*)   MANIFEST="os.windows=$(basename "$f")";;
-    esac
-    echo "   built $f"
+for a in "$MACOS_ART" "$LINUX_ART" "$WIN_ART"; do
+    [ -n "$a" ] && echo "   artifact: $a"
 done
 
-echo ">>> Release published to $OUT ($VER)"
+echo ">>> Release published to $OUT ($VER, $ARCH)"

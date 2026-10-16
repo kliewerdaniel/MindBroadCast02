@@ -16,6 +16,7 @@ __pycache__/
 build/
 dist/
 releases/
+*.spec
 
 # macOS
 .DS_Store
