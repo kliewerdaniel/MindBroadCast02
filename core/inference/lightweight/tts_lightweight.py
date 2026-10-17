@@ -141,8 +141,10 @@ class EspeakTTSProvider(TTSProvider):
                 "Install espeak-ng or choose another TTS.")
         try:
             engine = shutil_which("espeak-ng") or shutil_which("espeak")
+            # --stdout emits WAV to stdout. `-w -` writes to a *file* named
+            # "-" and yields 0 bytes, which silently produced empty audio.
             cmd = [
-                engine, "-w", "-", "-a", "200", "-s",
+                engine, "--stdout", "-a", "200", "-s",
                 str(int(150 + self.speed * 50)),
                 "-ven-us",
                 request.text,
@@ -151,7 +153,11 @@ class EspeakTTSProvider(TTSProvider):
             if result.returncode != 0:
                 raise ProviderError(
                     f"eSpeak synthesis failed: {result.stderr.decode()[:200]}")
-            audio = result.stdout
+            wav = result.stdout
+            # espeak emits a WAV container; the pipeline wants raw PCM.
+            audio = _wav_to_pcm(wav)
+            if not audio:
+                raise ProviderError("eSpeak produced no audio")
             duration_ms = int(len(audio) / (self.sample_rate * 2) * 1000)
         except Exception as error:
             raise ProviderError(f"eSpeak synthesis failed: {error}")
@@ -168,6 +174,108 @@ class EspeakTTSProvider(TTSProvider):
         )
 
 
+@dataclass
+class SayTTSProvider(TTSProvider):
+    """macOS built-in `say`: a real neural voice present on every Mac.
+
+    Not a placeholder and not a download. `say` ships with macOS, speaks with
+    the system voices, and can write a WAV file, so a Mac with no other TTS
+    stack still has a genuine voice with zero setup.
+    """
+
+    provider_id: str = "say"
+
+    def __init__(
+        self,
+        voice: Optional[str] = None,
+        speed: float = 1.0,
+        *,
+        sample_rate: int = 24000,
+    ):
+        self.sample_rate = sample_rate
+        self.speed = speed
+        self.voice = voice
+        self._capabilities = ProviderCapabilities(
+            streaming=False,
+            notes="macOS `say` system voice",
+        )
+
+    def capabilities(self) -> ProviderCapabilities:
+        return self._capabilities
+
+    async def health_check(self) -> bool:
+        import sys
+        return sys.platform == "darwin" and shutil_which("say") is not None
+
+    async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
+        if not await self.health_check():
+            raise ProviderError(
+                "macOS `say` unavailable: this backend is macOS-only.")
+        import tempfile
+        import os
+        # `say` writes a WAV file; -r is words per minute (default ~175).
+        rate = int(175 * max(0.5, min(2.0, self.speed)))
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
+                path = fh.name
+            cmd = ["say", "-o", path,
+                   f"--data-format=LEI16@{self.sample_rate}", "-r", str(rate)]
+            if self.voice:
+                cmd += ["-v", self.voice]
+            cmd.append(request.text)
+            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            if result.returncode != 0:
+                raise ProviderError(
+                    f"say synthesis failed: {result.stderr.decode()[:200]}")
+            with open(path, "rb") as fh:
+                audio = _wav_to_pcm(fh.read())
+            if not audio:
+                raise ProviderError("say produced no audio")
+            duration_ms = int(len(audio) / (self.sample_rate * 2) * 1000)
+        except ProviderError:
+            raise
+        except Exception as error:
+            raise ProviderError(f"say synthesis failed: {error}")
+        finally:
+            if path and os.path.exists(path):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+        return SynthesisResult(
+            audio=audio,
+            synthesis_attempt=request.synthesis_attempt or
+                f"att-{hashlib.sha256(request.text.encode()).hexdigest()[:12]}",
+            duration_ms=duration_ms,
+            sample_rate=self.sample_rate,
+            channels=1,
+            sample_format="pcm_s16le",
+            provider_id=self.provider_id,
+        )
+
+
 def shutil_which(binary: str) -> Optional[str]:
     import shutil
     return shutil.which(binary)
+
+
+def _wav_to_pcm(data: bytes) -> bytes:
+    """Strip a RIFF/WAVE header, returning raw PCM.
+
+    espeak writes a WAV container; the audio buffer and the director want raw
+    PCM. Falls back to returning the input unchanged when no RIFF header is
+    present (some builds can emit bare PCM).
+    """
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return data
+    pos = 12
+    while pos + 8 <= len(data):
+        chunk_id = data[pos:pos + 4]
+        size = int.from_bytes(data[pos + 4:pos + 8], "little")
+        body = pos + 8
+        if chunk_id == b"data":
+            return data[body:body + size]
+        pos = body + size + (size & 1)   # chunks are word-aligned
+    return b""

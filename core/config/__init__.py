@@ -207,19 +207,21 @@ class ModelContext:
         """Assemble the LLM provider. The desktop app chooses the backend from
         the detected set."""
         if self.llm_backend == "llama_cpp":
-            from .lightweight.llama_cpp_provider import LlamaCppProvider
+            from ..inference.lightweight.llama_cpp_provider import LlamaCppProvider
+            # LlamaCppProvider is constructed from a GGUF *path*, not a model
+            # name; it refuses a path that does not exist (fail-closed).
             return LlamaCppProvider(
-                model=self.llm_model,
+                model_path=self.llm_model,
                 base_url=self.llm_base_url,
                 timeout_seconds=self.llm_timeout,
             )
-        # ollama + the other OpenAI-compatible backends share the same class.
-        from .providers import OllamaCompatibleProvider
-        return OllamaCompatibleProvider(
+        # ollama and the other OpenAI-compatible servers share one class: they
+        # all speak /api/generate or the OpenAI chat shape on a local port.
+        from ..inference.providers import OllamaProvider
+        return OllamaProvider(
             base_url=self.llm_base_url,
             model=self.llm_model,
             timeout_seconds=self.llm_timeout,
-            provider_id=self.llm_backend,
         )
 
     def embedding_provider(self):
@@ -243,13 +245,21 @@ class ModelContext:
 
     def _build_tts_provider(self):
         if self.tts_backend == "piper":
-            from .lightweight.piper_tts import PiperTTSProvider
+            from ..inference.lightweight.tts_lightweight import PiperTTSProvider
             return PiperTTSProvider(speed=self.tts_speed)
         if self.tts_backend == "espeak":
-            from .lightweight.espeak_tts import EspeakTTSProvider
+            from ..inference.lightweight.tts_lightweight import EspeakTTSProvider
             return EspeakTTSProvider(speed=self.tts_speed)
+        if self.tts_backend == "say":
+            from ..inference.lightweight.tts_lightweight import SayTTSProvider
+            return SayTTSProvider(speed=self.tts_speed)
+        if self.tts_backend == "silence":
+            # Structurally valid silent PCM: the station runs without any audio
+            # model. Real TTSProvider, honest about having no voice.
+            from ..inference.providers import SilenceTTSProvider
+            return SilenceTTSProvider()
         # qwen3-tts-http: the default, persistent server path.
-        from .qwen3_tts_http import Qwen3TTSHttpProvider
+        from ..inference.qwen3_tts_http import Qwen3TTSHttpProvider
         return Qwen3TTSHttpProvider(
             base_url=f"http://127.0.0.1:{self.tts_port}",
             provider_id="qwen3-tts-http",

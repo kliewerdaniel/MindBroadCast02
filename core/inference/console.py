@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import struct
+import sys
 import threading
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -55,6 +56,75 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _best_available_tts_backend() -> str:
+    """Pick the best TTS this machine can actually run, fail-closed.
+
+    Order is quality-first, but every option is one whose *actual pre-flight*
+    passes — the app never selects a backend that cannot speak. Critically,
+    this must test the same condition the provider's health_check() does: a
+    bare `piper` binary is not enough, because PiperTTSProvider also needs a
+    voice file, and selecting it on the binary alone left the station mute
+    while the UI reported a working backend.
+
+    'silence' is the honest floor: structurally valid PCM with no voice, so the
+    station still runs (and says so in the UI) rather than refusing to start.
+    """
+    # Best voice: the persistent Qwen3-TTS server, if it is genuinely serving.
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+                "http://127.0.0.1:7861/health", timeout=2) as resp:
+            import json
+            if json.loads(resp.read().decode()).get("ok"):
+                return "qwen3-tts-http"
+    except Exception:
+        pass
+
+    # Each candidate is verified by constructing its real provider and running
+    # its real health check, so the selector can never disagree with the
+    # provider about whether it works.
+    for backend in ("piper", "espeak", "say"):
+        try:
+            provider = _provider_for(backend)
+            if _run_health(provider):
+                return backend
+        except Exception:
+            continue
+    return "silence"
+
+
+def _provider_for(backend: str):
+    """Build one TTS provider by id, without going through ModelContext."""
+    from ..config import ModelContext
+    return ModelContext.from_mapping({"tts": {"backend": backend}}).tts_provider()
+
+
+def _run_health(provider) -> bool:
+    """Run an async health check to completion WITHOUT disturbing the caller's
+    event loop.
+
+    asyncio.run() creates and then *closes* a loop, which broke unrelated
+    code that later called asyncio.get_event_loop() (core/legacy_import.py),
+    turning a local change into nine failures elsewhere. Use a private loop on
+    a worker thread so nothing in this process is touched.
+    """
+    import asyncio
+    import concurrent.futures
+
+    def _check() -> bool:
+        loop = asyncio.new_event_loop()
+        try:
+            return bool(loop.run_until_complete(provider.health_check()))
+        finally:
+            loop.close()
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return bool(pool.submit(_check).result(timeout=10))
+    except Exception:
+        return False
+
+
 def _broadcast(event: Dict[str, Any]) -> None:
     """Thread-safe push to every SSE subscriber."""
     if _main_loop is None:
@@ -83,9 +153,13 @@ class ConsoleState:
     """Holds the runtime and the ordered list of aired segments."""
 
     def __init__(self) -> None:
-        self.llm = OllamaProvider(model=os.environ.get(
-            "MBS_MODEL", "qwen3:30b-a3b"))
-        self.tts = Qwen3TTSHttpProvider()
+        # Build providers from the user's mindbroadcast.yaml when present, so
+        # a machine without the Qwen3-TTS model (i.e. every fresh install, the
+        # release does not bundle it) can still speak via piper/espeak, or run
+        # silently rather than refusing to start at all.
+        self.context = self._load_context()
+        self.llm = self.context.llm_provider()
+        self.tts = self.context.tts_provider()
         self.runtime = LiveRuntime(self.llm, self.tts,
                                    config=RuntimeConfig(max_segments=0))
         # The autonomous broadcaster shares the runtime, so both the demo
@@ -96,6 +170,35 @@ class ConsoleState:
             on_segment=self.on_segment)
         self.segments: List[Dict[str, Any]] = []   # ordered, playable
         _SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _load_context():
+        """Read mindbroadcast.yaml if the user (or brief-setup) wrote one.
+
+        Search order: $MB_CONFIG, the working directory, then the app's data
+        directory. Falls back to built-in defaults when none exists. The TTS
+        backend is chosen from what this machine can actually run, so the app
+        does not demand the heaviest model to function.
+        """
+        from ..config import ModelContext
+        candidates = []
+        env = os.environ.get("MB_CONFIG")
+        if env:
+            candidates.append(Path(env))
+        candidates.append(Path.cwd() / "mindbroadcast.yaml")
+        candidates.append(_SEGMENTS_DIR.parent / "mindbroadcast.yaml")
+        for path in candidates:
+            try:
+                if path.is_file():
+                    ctx = ModelContext.from_path(path)
+                    return ctx
+            except Exception:
+                continue
+        # No config: pick the best TTS this machine can actually run, so a
+        # machine without the Qwen3-TTS MLX stack still airs.
+        ctx = ModelContext.from_mapping({})
+        ctx.tts_backend = _best_available_tts_backend()
+        return ctx
 
     def on_segment(self, line: TranscriptLine) -> None:
         """Called by the runtime as each segment airs.
@@ -188,9 +291,10 @@ async def broadcast(topics: List[Dict[str, Any]]) -> Dict[str, Any]:
         raise HTTPException(409, "a broadcast is already running")
 
     health = await state.health()
-    if not all(health.values()):
+    if not health.get("llm"):
         _run_lock.release()
-        raise HTTPException(503, f"providers unavailable: {health}")
+        raise HTTPException(
+            503, f"language model unavailable: {health}. Is Ollama running?")
 
     def run_sync() -> None:
         global _run_active
@@ -225,9 +329,10 @@ async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(409, "a broadcast is already running")
 
     health = await state.health()
-    if not all(health.values()):
+    if not health.get("llm"):
         _run_lock.release()
-        raise HTTPException(503, f"providers unavailable: {health}")
+        raise HTTPException(
+            503, f"language model unavailable: {health}. Is Ollama running?")
 
     name = body.get("source", "Live Feed")
     endpoint = body.get("endpoint",
@@ -284,9 +389,14 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     if _station["running"]:
         raise HTTPException(409, "the station is already running")
 
+    # The LLM is required: without it there is nothing to say. TTS is NOT —
+    # a machine with no voice model still ingests, ranks, and produces a
+    # transcript (and airs silence). Requiring TTS here made the station
+    # unusable on every fresh install, since the release bundles no model.
     health = await state.health()
-    if not all(health.values()):
-        raise HTTPException(503, f"providers unavailable: {health}")
+    if not health.get("llm"):
+        raise HTTPException(
+            503, f"language model unavailable: {health}. Is Ollama running?")
 
     # Default to NPR: it ships full article text in the feed, which the
     # compiler turns into multiple claims per story — the basis for longform.

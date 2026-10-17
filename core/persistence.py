@@ -26,6 +26,7 @@ docs/PHASE_0_AUDIT.md):
 import sqlite3
 import json
 import hashlib
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -463,10 +464,61 @@ class Database:
                 conn.execute("PRAGMA foreign_keys=ON")
                 conn.execute("PRAGMA busy_timeout=5000")
                 if self.db_path != ":memory:":
-                    conn.execute("PRAGMA journal_mode=WAL")
+                    try:
+                        conn.execute("PRAGMA journal_mode=WAL")
+                    except sqlite3.DatabaseError:
+                        # A malformed file can fail even here, before any query.
+                        # Surface the connection anyway so the caller's
+                        # integrity probe can classify it and recover; raising
+                        # from connect() would make recovery impossible.
+                        pass
                 conn.row_factory = sqlite3.Row
                 self._conn = conn
             return self._conn
+
+    def _quarantine_and_recreate(self) -> Optional[str]:
+        """Move a corrupt database aside and start a fresh one.
+
+        A malformed file must not make the app unusable: the world model is
+        rebuildable from the feeds, so the honest recovery is to preserve the
+        damaged file for inspection and begin again. Returns the quarantine
+        path, or None when there was nothing to move.
+        """
+        if self.db_path == ":memory:":
+            return None
+        self.close()
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        moved = []
+        for suffix in ("", "-wal", "-shm"):
+            src = Path(str(self.db_path) + suffix)
+            if src.exists():
+                dst = src.with_name(src.name + f".corrupt-{stamp}")
+                try:
+                    src.replace(dst)
+                    moved.append(str(dst))
+                except OSError:
+                    pass
+        return moved[0] if moved else None
+
+    def integrity_ok(self) -> bool:
+        """True when SQLite reports the file is structurally sound.
+
+        PRAGMA integrity_check returns 'ok' as a single row when the file is
+        good; anything else (a list of broken pages) means corruption. A file
+        damaged badly enough that the pragma itself raises counts as corrupt.
+        """
+        if self.db_path == ":memory:":
+            return True
+        try:
+            conn = self.connect()
+            row = conn.execute("PRAGMA integrity_check").fetchone()
+            return bool(row) and row[0] == "ok"
+        except sqlite3.DatabaseError:
+            return False
+        except Exception:
+            # A file too damaged to read at all (or not a database) is corrupt
+            # by definition — never let the probe itself be the failure.
+            return False
 
     def close(self) -> None:
         with self._lock:
@@ -486,7 +538,29 @@ class Database:
     def initialize(self) -> int:
         conn = self.connect()
         with self._lock:
-            conn.executescript(CREATE_TABLES_SQL)
+            # Check integrity up front: executescript() does not raise on a
+            # file whose *data* trees are broken (only the schema pages are
+            # touched), so corruption was discovered later, mid-ingest, as a
+            # bare "database disk image is malformed" that killed the station
+            # with no explanation. Detect it here, where recovery is possible.
+            if not self.integrity_ok():
+                quarantine = self._quarantine_and_recreate()
+                if quarantine is None:
+                    raise sqlite3.DatabaseError(
+                        "database is corrupt and could not be moved aside")
+                print(f"[persistence] database was corrupt; moved to "
+                      f"{quarantine} and starting fresh", file=sys.stderr)
+                conn = self.connect()
+            try:
+                conn.executescript(CREATE_TABLES_SQL)
+            except sqlite3.DatabaseError as error:
+                quarantine = self._quarantine_and_recreate()
+                if quarantine is None:
+                    raise
+                print(f"[persistence] database was unreadable ({error}); "
+                      f"moved to {quarantine} and starting fresh", file=sys.stderr)
+                conn = self.connect()
+                conn.executescript(CREATE_TABLES_SQL)
             row = conn.execute(
                 "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
             ).fetchone()

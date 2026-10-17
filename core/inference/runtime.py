@@ -116,8 +116,11 @@ class LiveRuntime:
         (§27.4) — the loop does not fabricate.
         """
         health = await self.health()
-        if not all(health.values()):
-            self.errors.append(f"providers unavailable: {health}")
+        # The LLM is required (no model, nothing to say). TTS is not: a
+        # machine with no voice still produces a transcript and airs silence,
+        # which is strictly better than refusing to run at all.
+        if not health.get("llm"):
+            self.errors.append(f"language model unavailable: {health}")
             return self.transcript
 
         self._running = True
