@@ -164,3 +164,111 @@ def test_ui_renders_progress_and_the_voice():
     # The voice indicator: a lost voice must be visible, not silent.
     assert 'id="voice-text"' in html
     assert "cloned_voice" in js
+
+
+# ── the frozen app must be able to START the real voice ────────────────
+
+def test_project_root_resolves_through_a_venv_symlink():
+    """A venv's python is a symlink into Homebrew; resolving it loses the root.
+
+    Path.resolve() follows the symlink to /opt/homebrew/.../Python.framework,
+    so the search walked up through /opt and found nothing — a perfectly good
+    MLX interpreter was found and then thrown away.
+    """
+    from core.desktop import _project_root_for
+    interp = str(ROOT / ".venv" / "bin" / "python")
+    if not Path(interp).exists():
+        pytest.skip("no .venv in this checkout")
+    assert _project_root_for(interp) == str(ROOT)
+
+
+def test_project_root_finds_the_package_from_the_venv():
+    """The resolved root must actually contain the package to be launched."""
+    from core.desktop import _project_root_for
+    interp = str(ROOT / ".venv" / "bin" / "python")
+    if not Path(interp).exists():
+        pytest.skip("no .venv in this checkout")
+    resolved = _project_root_for(interp)
+    assert resolved is not None
+    assert (Path(resolved) / "core" / "inference" / "tts_server.py").is_file()
+
+
+def test_project_root_is_none_for_an_unrelated_interpreter():
+    """A python with no project above it must not invent one."""
+    from core.desktop import _project_root_for
+    assert _project_root_for("/usr/bin/python3") is None
+
+
+def test_external_tts_launches_with_core_importable(monkeypatch, tmp_path):
+    """The TTS subprocess must run where `core` resolves.
+
+    The frozen app started the server with cwd=~/.mindbroadcast, so
+    `python -m core.inference.tts_server` died with "No module named 'core'".
+    The interpreter was found, then wasted, and the station fell back to a
+    synthetic voice.
+
+    Exercised with _ROOT pointed at a directory that has NO core package, so
+    the test fails if the cwd is taken from _ROOT instead of the interpreter's
+    project. (In a source run _ROOT happens to be the project, which is why
+    the bug was invisible there and only appeared in the packaged app.)
+    """
+    from core import desktop
+
+    interp = str(ROOT / ".venv" / "bin" / "python")
+    if not Path(interp).exists():
+        pytest.skip("no .venv in this checkout")
+
+    captured = {}
+
+    class _FakePopen:
+        def __init__(self, cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+
+        def terminate(self):
+            pass
+
+    monkeypatch.setattr(desktop.subprocess, "Popen", _FakePopen)
+    # A frozen app's _ROOT is the data dir, not the source tree. It must be a
+    # real directory (the function writes a log into it) with no core package.
+    frozen_root = tmp_path / "frozen-root"
+    (frozen_root / "data").mkdir(parents=True)
+    monkeypatch.setattr(desktop, "_ROOT", frozen_root)
+
+    desktop._start_tts_external(interp)
+
+    cwd = captured["kwargs"].get("cwd")
+    assert cwd, "no cwd set: the module would not be importable"
+    assert (Path(cwd) / "core" / "__init__.py").is_file(), (
+        f"cwd {cwd} has no core package; `python -m core...` would fail")
+    assert Path(cwd) != frozen_root, (
+        "ran from the data dir, where `core` does not exist")
+    # PYTHONPATH is the belt to the cwd's braces.
+    assert cwd in captured["kwargs"].get("env", {}).get("PYTHONPATH", "")
+
+
+def test_startup_waits_for_tts_health_not_just_the_port():
+    """A TTS server answers on its port before its model is loaded.
+
+    Waiting on reachability returns immediately, the console probes TTS, sees
+    unhealthy, and pins the session to a fallback voice. The wait must be for
+    HEALTH.
+    """
+    source = (ROOT / "core" / "desktop.py").read_text()
+    assert "_wait_for_health(" in source, (
+        "startup does not wait for TTS health; the cloned voice can be lost "
+        "to a race with model loading")
+    # And it must be the health wait that gates the console start.
+    assert "_wait_for_health(f\"http://127.0.0.1:{_TTS_PORT}/health\"" in source
+
+
+def test_wait_for_health_ignores_a_server_that_is_up_but_unhealthy(monkeypatch):
+    """Directly: reachable-but-503 must not satisfy the wait."""
+    from core import desktop
+
+    monkeypatch.setattr(desktop, "_reachable", lambda url, timeout=3.0: True)
+    monkeypatch.setattr(desktop, "_healthy", lambda url, timeout=3.0: False)
+    assert desktop._wait_for_health("http://x/health", 0.6) is False
+
+    monkeypatch.setattr(desktop, "_healthy", lambda url, timeout=3.0: True)
+    assert desktop._wait_for_health("http://x/health", 0.6) is True

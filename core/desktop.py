@@ -152,13 +152,47 @@ def _interpreter_with_mlx() -> Optional[str]:
     return None
 
 
+def _project_root_for(interpreter: str) -> Optional[str]:
+    """The directory that has the ``core`` package for this interpreter.
+
+    A venv's python lives at ``<root>/.venv/bin/python``, so the project root
+    is above it. This matters because ``python -m core.inference.tts_server``
+    needs ``core`` importable, and in a frozen app the app's data dir
+    (``~/.mindbroadcast``) is NOT where the source lives — running the server
+    with that as its cwd failed with ``No module named 'core'``, so a perfectly
+    good MLX interpreter was found and then thrown away, and the station fell
+    back to a synthetic voice.
+    """
+    # Do NOT call .resolve(): a venv's python is a symlink to the real
+    # interpreter under Homebrew (/opt/homebrew/.../Python.framework), so
+    # resolving it loses the venv path and the project root entirely — the
+    # search then walks up through /opt and finds nothing. The symlink's own
+    # location is what tells us where the project is.
+    start = Path(interpreter).absolute().parent
+    # Walk up a bounded number of levels looking for the package, so an
+    # unusual layout still resolves without scanning the filesystem.
+    for candidate in [start] + list(start.parents)[:4]:
+        if (candidate / "core" / "__init__.py").is_file():
+            return str(candidate)
+    return None
+
+
 def _start_tts_external(interpreter: str) -> subprocess.Popen:
-    """Start the TTS server with an interpreter that has the real stack."""
+    """Start the TTS server with an interpreter that has the real stack.
+
+    Runs from the directory containing ``core`` rather than the app's data
+    dir, and puts it on PYTHONPATH as well, so the module is importable even
+    if the working directory is ignored.
+    """
     log = open(_ROOT / "data" / "tts.log", "w")
+    cwd = _project_root_for(interpreter) or str(_ROOT)
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = cwd + (os.pathsep + existing if existing else "")
     return subprocess.Popen(
         [interpreter, "-m", "core.inference.tts_server",
          "--port", str(_TTS_PORT)],
-        cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
+        cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
 
 
 def _start_console() -> subprocess.Popen:
@@ -208,6 +242,22 @@ def _wait_for(url: str, seconds: float) -> bool:
     return False
 
 
+def _wait_for_health(url: str, seconds: float) -> bool:
+    """Wait until an endpoint reports ``ok: true``, not merely that it answers.
+
+    The TTS server binds its port immediately but returns 503 from /health
+    until its model has loaded. Waiting on reachability alone returns at once,
+    the console then probes TTS, sees unhealthy, and pins the session to a
+    fallback voice — which is how the cloned voice kept disappearing.
+    """
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if _healthy(url):
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def _build_app() -> None:
     """Open the native window, starting whatever is not already up."""
     import webview
@@ -232,9 +282,14 @@ def _build_app() -> None:
             _serve_in_thread(_tts_main, ["--port", str(_TTS_PORT)])
         else:
             started.append(_start_tts())
-        # Do NOT block the window on TTS: speech is optional, the station is
-        # not. A missing voice must never leave the user with no UI.
-        if not frozen and not _wait_for(f"http://127.0.0.1:{_TTS_PORT}/health", 20):
+        # Wait for the voice to come up BEFORE the console starts, in every
+        # mode. The console probes TTS once at startup; if the model is still
+        # loading it settles on a fallback voice for the whole session. The
+        # TTS server answers on its port immediately but reports unhealthy
+        # until the model is loaded, so this must wait for HEALTH, not merely
+        # for the port. Bounded, and never fatal: the station is worth running
+        # without a voice, but it should not give one up for lack of waiting.
+        if not _wait_for_health(f"http://127.0.0.1:{_TTS_PORT}/health", 120):
             (_ROOT / "data").mkdir(exist_ok=True)
             (_ROOT / "data" / "tts-unavailable.log").write_text(
                 _log_tail("tts.log") or "(no log)")
