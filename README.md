@@ -65,6 +65,10 @@ The system runs itself. Start it, and it watches, decides, speaks, and moves on
   (`chris.wav`), differentiated only by delivery.
 - **Browser console** — live SSE transcript, per-segment audio playback,
   start/stop the station.
+- **Editable feeds and settings** — change which RSS feeds supply the news
+  (add, edit, disable, remove) and tune the station (cycle cadence, world
+  feeds, multi-persona dialogue, per-cycle compile budget) from a translucent
+  settings panel in the app. No code editing required.
 
 ---
 
@@ -185,6 +189,23 @@ python3 -m uvicorn core.inference.console:app --host 127.0.0.1 --port 7862
 
 Open **http://127.0.0.1:7862**, **click once** to enable audio (browsers block
 autoplay until a user gesture), then press **Start the station**.
+
+**Settings** (top right) opens a translucent panel over the running station:
+
+- **Feeds** — every registered source with its enabled state. Add a feed by
+  URL, edit its name or address, disable it to pause without deleting, or
+  remove it. Removing a feed that still has articles is refused: that would
+  orphan the provenance of every claim compiled from it, so disable it
+  instead. Feeds marked `world` come from the curated registry; edits take
+  effect on the next cycle.
+- **Station** — seconds between cycles (30s floor), whether to use the curated
+  world feeds, whether to use multi-persona dialogue, and how many articles to
+  compile per cycle.
+
+Settings persist to `settings.json` in the data directory
+(`~/.mindbroadcast/` for the packaged app). A malformed file falls back to
+defaults rather than stopping the station, and out-of-range values are clamped
+with the applied value shown back to you.
 
 ### 4. Compare models
 
