@@ -12,7 +12,11 @@ headless server wearing an .app costume".
 import sys
 
 OWNER_HINT = "MindBroadcast"
-MIN_WIDTH = 200
+# A source run (python -m core.desktop) is owned by "Python"; a frozen .app is
+# owned by "MindBroadcast". Accept either, but require a real window size so an
+# unrelated Python process cannot satisfy the check.
+OWNER_ALIASES = ("MindBroadcast", "Python")
+MIN_WIDTH = 800
 
 
 def main() -> int:
@@ -31,11 +35,12 @@ def main() -> int:
         owner = str(w.get("kCGWindowOwnerName", ""))
         title = str(w.get("kCGWindowName", ""))
         bounds = w.get("kCGWindowBounds", {}) or {}
-        if OWNER_HINT in owner or OWNER_HINT in title:
-            if bounds.get("Width", 0) >= MIN_WIDTH:
-                print(f"window: owner={owner!r} title={title!r} "
-                      f"{bounds.get('Width')}x{bounds.get('Height')}")
-                return 0
+        matched = any(a in owner for a in OWNER_ALIASES) or \
+            any(a in title for a in OWNER_ALIASES)
+        if matched and bounds.get("Width", 0) >= MIN_WIDTH:
+            print(f"window: owner={owner!r} title={title!r} "
+                  f"{bounds.get('Width')}x{bounds.get('Height')}")
+            return 0
     print("no MindBroadcast window on screen")
     return 1
 

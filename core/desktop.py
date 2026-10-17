@@ -28,6 +28,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -57,8 +58,29 @@ _CONSOLE_PORT = 7862
 _CONSOLE_URL = f"http://127.0.0.1:{_CONSOLE_PORT}/"
 
 
+def _reachable(url: str, timeout: float = 3.0) -> bool:
+    """Whether the endpoint answers at all — the readiness question.
+
+    Distinct from _healthy on purpose. The console's /api/health reports
+    ``ok: all(services.values())``, so a working console with an absent TTS
+    server answers ``{"ok": false, "services": {"llm": true, "tts": false}}``.
+    Gating startup on ``ok`` treated a running-but-degraded console as "did not
+    start" and showed an error page over a perfectly good server. Readiness is
+    "the port answers", not "every optional subsystem is up".
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return 200 <= resp.status < 400
+    except urllib.error.HTTPError as exc:
+        # A 4xx/5xx still proves something is listening and serving HTTP.
+        return 200 <= exc.code < 500
+    except Exception:
+        return False
+
+
 def _healthy(url: str, timeout: float = 3.0) -> bool:
-    """Whether an endpoint responds. A false can also mean 'not started yet'."""
+    """Whether an endpoint reports every service healthy. A false can also
+    mean 'not started yet'."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             import json
@@ -127,7 +149,7 @@ def _log_tail(name: str) -> str:
 def _wait_for(url: str, seconds: float) -> bool:
     deadline = time.time() + seconds
     while time.time() < deadline:
-        if _healthy(url):
+        if _reachable(url):
             return True
         time.sleep(0.5)
     return False
@@ -141,7 +163,7 @@ def _build_app() -> None:
     frozen = _frozen()
 
     # 1. TTS server.
-    if not _healthy(f"http://127.0.0.1:{_TTS_PORT}/health"):
+    if not _reachable(f"http://127.0.0.1:{_TTS_PORT}/health"):
         if frozen:
             # No interpreter to spawn: run it here. A frozen release also has
             # no MLX/Qwen3-TTS model, so this is expected to stay unhealthy —
@@ -159,7 +181,7 @@ def _build_app() -> None:
                 _log_tail("tts.log") or "(no log)")
 
     # 2. Console.
-    if not _healthy(f"http://127.0.0.1:{_CONSOLE_PORT}/api/health"):
+    if not _reachable(f"http://127.0.0.1:{_CONSOLE_PORT}/api/health"):
         if frozen:
             from core.inference.console import app as _console_app
             import uvicorn as _uvicorn
