@@ -282,14 +282,22 @@ def _build_app() -> None:
             _serve_in_thread(_tts_main, ["--port", str(_TTS_PORT)])
         else:
             started.append(_start_tts())
-        # Wait for the voice to come up BEFORE the console starts, in every
-        # mode. The console probes TTS once at startup; if the model is still
-        # loading it settles on a fallback voice for the whole session. The
-        # TTS server answers on its port immediately but reports unhealthy
-        # until the model is loaded, so this must wait for HEALTH, not merely
-        # for the port. Bounded, and never fatal: the station is worth running
-        # without a voice, but it should not give one up for lack of waiting.
-        if not _wait_for_health(f"http://127.0.0.1:{_TTS_PORT}/health", 120):
+        # Give the model a brief chance to load before the console probes TTS,
+        # but ONLY when a real MLX interpreter was found: that is the only case
+        # where waiting can change the outcome.
+        #
+        # This must stay short and must never block the window for long. The
+        # in-process server (no MLX anywhere, e.g. a CI runner) can never
+        # report healthy, so waiting on it means waiting for the full timeout
+        # with no window on screen — which is exactly how a 120s wait here
+        # failed the macOS build's launch check.
+        #
+        # Waiting is only an optimisation regardless: the console re-evaluates
+        # the backend before each cycle and during every wait between cycles
+        # (ConsoleState.refresh_tts_backend), so a model that finishes loading
+        # later is still adopted without a restart.
+        if external and not _wait_for_health(
+                f"http://127.0.0.1:{_TTS_PORT}/health", 30):
             (_ROOT / "data").mkdir(exist_ok=True)
             (_ROOT / "data" / "tts-unavailable.log").write_text(
                 _log_tail("tts.log") or "(no log)")

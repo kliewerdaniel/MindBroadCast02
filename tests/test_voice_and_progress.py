@@ -252,14 +252,31 @@ def test_startup_waits_for_tts_health_not_just_the_port():
 
     Waiting on reachability returns immediately, the console probes TTS, sees
     unhealthy, and pins the session to a fallback voice. The wait must be for
-    HEALTH.
+    HEALTH — but only when a real MLX interpreter was found, because the
+    in-process fallback server can never become healthy and waiting on it
+    would block the window (that failed the macOS build's launch check).
     """
     source = (ROOT / "core" / "desktop.py").read_text()
     assert "_wait_for_health(" in source, (
         "startup does not wait for TTS health; the cloned voice can be lost "
         "to a race with model loading")
-    # And it must be the health wait that gates the console start.
-    assert "_wait_for_health(f\"http://127.0.0.1:{_TTS_PORT}/health\"" in source
+    # Gated on `external`, so the no-MLX case never blocks the window.
+    assert "if external and not _wait_for_health(" in source, (
+        "the health wait is not gated on having found an MLX interpreter; "
+        "the in-process fallback would block the window for the full timeout")
+
+
+def test_health_wait_is_bounded_and_short():
+    """A long blocking wait means no window, which fails the launch check."""
+    import re
+    source = (ROOT / "core" / "desktop.py").read_text()
+    match = re.search(
+        r"if external and not _wait_for_health\(\s*"
+        r"f\"http://127\.0\.0\.1:\{_TTS_PORT\}/health\",\s*(\d+)\)", source)
+    assert match, "could not find the gated health wait"
+    assert int(match.group(1)) <= 60, (
+        "the pre-window health wait is too long; it delays the window and "
+        "the launch check gives up")
 
 
 def test_wait_for_health_ignores_a_server_that_is_up_but_unhealthy(monkeypatch):
