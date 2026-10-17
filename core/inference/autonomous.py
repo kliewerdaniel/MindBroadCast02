@@ -100,6 +100,10 @@ class AutonomousBroadcaster:
         self._aired_claim_ids: set = set()
         self._aired_story_ids: set = set()
         self._source_cursor: int = 0
+        # Region-interleaved rotation order, recomputed only when the enabled
+        # source set changes (see _rotation_order).
+        self._rotation_key: Optional[tuple] = None
+        self._rotation_cache: List[Source] = []
         self._stop = False
         self._load_state()
 
@@ -286,7 +290,7 @@ class AutonomousBroadcaster:
             pass
 
     async def run_forever(self, source_id: Optional[str] = None,
-                          poll_seconds: float = 120.0,
+                          poll_seconds: float = 30.0,
                           on_cycle: Optional[Any] = None,
                           on_wait: Optional[Any] = None,
                           max_cycles: int = 0) -> None:
@@ -357,12 +361,41 @@ class AutonomousBroadcaster:
         # Not pinned: rotate through enabled sources so a multi-source
         # station actually ingests from all of them across cycles, rather
         # than starving every source after the first (§3 multi-source).
+        #
+        # The rotation is REGION-AWARE. The world registry has far more North
+        # American feeds than Oceanian ones, so a flat round-robin over feeds
+        # would give the largest region the most airtime — the opposite of the
+        # "represent the world" requirement. rotation_order() interleaves the
+        # regions so each contributes in turn, and the user's own feeds come
+        # first because they were asked for explicitly.
         sources = await self.store.list_sources(enabled_only=True)
         if not sources:
             return None
-        chosen = sources[self._source_cursor % len(sources)]
+        ordered = self._rotation_order(sources)
+        chosen = ordered[self._source_cursor % len(ordered)]
         self._source_cursor += 1
         return chosen
+
+    def _rotation_order(self, sources: List[Source]) -> List[Source]:
+        """Sources in region-interleaved order, stable within a cycle.
+
+        Recomputed when the enabled set changes, so adding or disabling a feed
+        takes effect without a restart, and cached otherwise so the cursor
+        keeps pointing at the same place between cycles.
+        """
+        from .world_sources import rotation_order
+
+        key = tuple(sorted(s.endpoint for s in sources))
+        if key != self._rotation_key:
+            by_url = {}
+            for source in sources:
+                by_url.setdefault(source.endpoint, source)
+            self._rotation_cache = [
+                by_url[url] for url in rotation_order(list(by_url))
+                if url in by_url
+            ]
+            self._rotation_key = key
+        return self._rotation_cache
 
     async def _recent_articles(self, source_id: str, limit: int
                                ) -> List[Any]:

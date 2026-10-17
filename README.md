@@ -27,7 +27,7 @@
 MindBroadcast is not a podcast generator that renders a fixed script. It is a
 continuously running information system.
 
-It ingests live news feeds from **25 sources across 8 world regions**, compiles
+It ingests live news feeds from **176 sources across 9 world regions**, compiles
 them into claims with verifiable provenance, clusters those claims into stories,
 ranks them by real signal, and broadcasts the most newsworthy one — then sleeps
 and does it again. It maintains an internal model of the world, tracks story
@@ -51,8 +51,10 @@ The system runs itself. Start it, and it watches, decides, speaks, and moves on
 
 - **Autonomous station** — watches live RSS, ingests, compiles, clusters,
   ranks, and airs, continuously. Survives restart without re-airing.
-- **World coverage** — 25 live feeds across North America, Europe, the Middle
-  East, Asia, Africa, Latin America, South Asia, and Oceania.
+- **World coverage** — 176 live, probed feeds across North America, Europe,
+  the Middle East, Asia, Africa, Latin America, South Asia, Oceania, and
+  global institutions. Rotation is region-interleaved, so the broadcast does
+  not favour whichever region happens to have the most outlets.
 - **Real local inference** — Qwen3 (`30b-a3b` MoE) for reasoning,
   `nomic-embed-text` for embeddings, Qwen3-TTS for speech. Localhost-only and
   fail-closed.
@@ -222,7 +224,7 @@ a model swap is an objective decision, not a guess.
 
 ```
 live RSS ─▶ ingest ─▶ compile ─▶ cluster ─▶ rank ─▶ compose ─▶ validate ─▶ speak
- (25 feeds)  (§7)     (§14)     (stories)   (§10)   (§12.4)     (§15.4)    (TTS)
+ (176 feeds)  (§7)     (§14)     (stories)   (§10)   (§12.4)     (§15.4)    (TTS)
 ```
 
 | Stage | What happens |

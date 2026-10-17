@@ -44,8 +44,10 @@ MIN_POLL_SECONDS = 30.0
 class StationSettings:
     """Everything the user can tune, with safe defaults."""
 
-    #: Seconds between cycles.
-    poll_seconds: float = 120.0
+    #: Seconds between cycles. 30s is the default AND the floor: the station
+    #: rotates across ~125 feeds, so a faster cadence would mostly re-ask
+    #: publishers for the same headlines.
+    poll_seconds: float = 30.0
     #: Use the curated world registry (region-balanced) in addition to the
     #: user's own feeds.
     use_world_feeds: bool = True
@@ -84,7 +86,7 @@ class StationSettings:
             regions = []
 
         return cls(
-            poll_seconds=_float("poll_seconds", 120.0),
+            poll_seconds=_float("poll_seconds", 30.0),
             use_world_feeds=bool(data.get("use_world_feeds", True)),
             multi_persona=bool(data.get("multi_persona", True)),
             max_compile_per_cycle=_int("max_compile_per_cycle", 8, 1, 100),

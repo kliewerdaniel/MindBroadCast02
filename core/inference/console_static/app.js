@@ -41,8 +41,10 @@ const voiceText = document.getElementById("voice-text");
 const fieldMode = document.getElementById("field-mode");
 const audioHint = document.getElementById("audio-hint");
 
-const REGIONS = ["North America", "Europe", "Middle East", "Asia",
-                 "Africa", "Latin America", "South Asia", "Oceania"];
+// Region list is fetched from the server (the world registry is the source of
+// truth). It used to be hardcoded here, which silently drifted the moment a
+// region was added: "Global" would never have appeared in the panel.
+let REGIONS = [];
 
 let queue = [];            // segments waiting to play
 let playing = false;
@@ -650,7 +652,7 @@ async function toggleStation() {
   const opts = stationRunning
     ? { method: "POST" }
     : { method: "POST", headers: { "Content-Type": "application/json" } };
-  if (!stationRunning) opts.body = JSON.stringify({ poll_seconds: 90, world: true });
+  if (!stationRunning) opts.body = JSON.stringify({ poll_seconds: 30, world: true });
   try {
     const res = await fetch(url, opts);
     if (!stationRunning && res.ok) {
@@ -779,7 +781,7 @@ async function loadSettings() {
     const data = await res.json();
     const s = data.settings || {};
     minPollSeconds = data.min_poll_seconds || 30;
-    setPoll.value = s.poll_seconds ?? 120;
+    setPoll.value = s.poll_seconds ?? 30;
     setPoll.min = minPollSeconds;
     setPollHint.textContent = `minimum ${minPollSeconds}s — faster polling ` +
       `does not produce more news, it just re-asks.`;
@@ -974,3 +976,26 @@ renderRegions();
 refreshHealth();
 setInterval(refreshHealth, 15000);
 connect();
+
+// Load the world registry's shape, then draw the region panel from it. Done
+// before renderRegions() matters, so a region added server-side appears
+// without a client change.
+(async function loadWorld() {
+  try {
+    const res = await fetch("/api/world");
+    const data = await res.json();
+    REGIONS = data.regions || [];
+    const line = document.getElementById("sources-line");
+    if (line) {
+      line.textContent =
+        `${data.feeds_total} feeds · ${REGIONS.length} regions · rotating`;
+    }
+    const label = document.getElementById("world-feeds-label");
+    if (label) {
+      label.textContent =
+        `Use the curated world feeds (${data.feeds_total} feeds, ` +
+        `${REGIONS.length} regions)`;
+    }
+    renderRegions();
+  } catch (e) { /* leave the panel empty rather than wrong */ }
+})();

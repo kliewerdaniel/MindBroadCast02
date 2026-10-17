@@ -472,7 +472,7 @@ async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
 
 _station: Dict[str, Any] = {"running": False, "thread": None,
                             "source": None, "endpoint": None,
-                            "poll_seconds": 120.0, "started_at": None,
+                            "poll_seconds": 30.0, "started_at": None,
                             "last_progress": None}
 
 
@@ -630,6 +630,25 @@ def _on_station_cycle(cycle: Any) -> None:
 # ── feeds: edit where the news comes from ────────────────────────────
 # The station's sources are rows in the world model's sources table. These
 # endpoints let the user see and change them without touching the database.
+
+@app.get("/api/world")
+async def world_info() -> Dict[str, Any]:
+    """The curated world registry's shape, so the UI never hardcodes it.
+
+    The region list and feed count live in world_sources.py. Duplicating them
+    in the client meant the panel silently missed a region the moment one was
+    added.
+    """
+    from .world_sources import WORLD_FEEDS, all_feeds
+
+    feeds = all_feeds()
+    return {
+        "regions": list(WORLD_FEEDS.keys()),
+        "feeds_total": len(feeds),
+        "full_text_feeds": sum(1 for f in feeds if f.full_text),
+        "per_region": {r: len(v) for r, v in WORLD_FEEDS.items()},
+    }
+
 
 @app.get("/api/feeds")
 async def list_feeds() -> Dict[str, Any]:

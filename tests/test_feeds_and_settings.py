@@ -141,7 +141,7 @@ def test_settings_clamp_hostile_values():
     assert s.max_compile_per_cycle <= 100
 
     s2 = StationSettings.from_mapping({"poll_seconds": "not a number"})
-    assert s2.poll_seconds == 120.0        # falls back, does not raise
+    assert s2.poll_seconds == StationSettings().poll_seconds  # falls back
 
 
 def test_settings_survive_a_round_trip(tmp_path):
