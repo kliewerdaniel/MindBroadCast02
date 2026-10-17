@@ -21,6 +21,7 @@ Design boundaries, from the spec:
 """
 
 import asyncio
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -98,6 +99,30 @@ class LiveRuntime:
         self.segments_produced = 0
         self.errors: List[str] = []
         self._running = False
+        # A runtime is shared by the demo, one-cycle, and continuous station
+        # paths, and each of those can run on its own thread. `segment_id` is
+        # derived from `segments_produced`, so two concurrent runs computed the
+        # SAME id, `add_segment` silently overwrote the first, and the second
+        # then drove a COMPLETED segment to GENERATING — the reported
+        # "illegal segment transition completed -> generating". The id
+        # allocator below is what keeps ids unique across those threads.
+        self._id_lock = threading.Lock()
+
+    def _next_segment_id(self) -> str:
+        """Reserve the next segment id, atomically.
+
+        Two concurrent runs each computed `seg-{segments_produced+1}` from the
+        same counter, so both named their segment seg-001; add_segment then
+        overwrote the first and the second drove a COMPLETED segment to
+        GENERATING. The counter and the id it produces must be read and
+        incremented together, which this does under a lock.
+
+        A threading.Lock (not an asyncio one) because the run paths use
+        separate event loops on separate threads.
+        """
+        with self._id_lock:
+            self.segments_produced += 1
+            return f"seg-{self.segments_produced:03d}"
 
     async def health(self) -> Dict[str, bool]:
         """Fail-closed preflight: both providers must be live."""
@@ -144,7 +169,7 @@ class LiveRuntime:
         if not objective:
             return None      # nothing to say; silence (§27.4)
 
-        segment_id = f"seg-{self.segments_produced + 1:03d}"
+        segment_id = self._next_segment_id()
         segment = Segment(
             id=segment_id, status=SegmentStatus.PLANNED,
             persona_id=self.config.persona_id, objective=objective,
@@ -291,7 +316,8 @@ class LiveRuntime:
         # 6. Play out and complete.
         self.director.begin_playback(segment_id)
         self.director.complete_playback(segment_id)
-        self.segments_produced += 1
+        # The id was already reserved by _next_segment_id(); incrementing here
+        # too would skip a number and desync the counter from the ids in use.
 
         return TranscriptLine(
             speaker=self.config.persona_id, text=spoken_text,
@@ -400,7 +426,8 @@ class LiveRuntime:
             is_end_of_segment=True))
         self.director.begin_playback(segment_id)
         self.director.complete_playback(segment_id)
-        self.segments_produced += 1
+        # Already reserved by _next_segment_id(); see the note in the
+        # single-voice path.
 
         spoken_text = " ".join(t.text for t in script.turns if t.text).strip()
         speakers = ", ".join(dict.fromkeys(

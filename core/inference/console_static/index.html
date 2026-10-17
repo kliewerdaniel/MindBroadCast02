@@ -29,6 +29,7 @@
       <div class="vital"><span id="health-dot" class="dot unknown"></span><span id="health-text">connecting</span></div>
       <div class="vital"><span id="voice-dot" class="dot unknown"></span><span id="voice-text">voice</span></div>
       <div class="vital"><span id="station-dot" class="dot unknown"></span><span id="station-text">idle</span></div>
+      <button id="settings-btn" class="ghost settings-open" title="Settings">Settings</button>
     </div>
   </header>
 
@@ -119,6 +120,59 @@
 </div>
 
 <audio id="player" preload="auto"></audio>
+
+<!-- Settings: a translucent panel over the station. Feeds and knobs, live. -->
+<div id="settings-overlay" class="overlay" hidden>
+  <div class="settings-panel" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="settings-head">
+      <h2>Settings</h2>
+      <button id="settings-close" class="ghost" aria-label="Close settings">Close</button>
+    </div>
+
+    <div class="settings-body">
+      <section class="settings-group">
+        <h3>Station</h3>
+        <label class="field">
+          <span class="field-label">Seconds between cycles</span>
+          <input id="set-poll" type="number" min="30" step="10">
+          <span class="field-hint" id="set-poll-hint"></span>
+        </label>
+        <label class="field check">
+          <input id="set-world" type="checkbox">
+          <span>Use the curated world feeds (25 feeds, 8 regions)</span>
+        </label>
+        <label class="field check">
+          <input id="set-persona" type="checkbox">
+          <span>Use multi-persona dialogue when a story allows it</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Articles compiled per cycle</span>
+          <input id="set-compile" type="number" min="1" max="100" step="1">
+          <span class="field-hint">Each one is a language-model pass.</span>
+        </label>
+      </section>
+
+      <section class="settings-group">
+        <h3>Feeds <span id="feeds-count" class="group-count"></span></h3>
+        <p class="group-hint">Where the news comes from. Disable a feed to
+          pause it; edits take effect on the next cycle.</p>
+        <ul id="feeds-list" class="feeds-list"></ul>
+        <div class="feed-add">
+          <input id="feed-name" type="text" placeholder="Name">
+          <input id="feed-url" type="url" placeholder="https://example.com/rss.xml">
+          <button id="feed-add-btn" class="ghost">Add feed</button>
+        </div>
+        <div id="feeds-msg" class="feeds-msg"></div>
+      </section>
+    </div>
+
+    <div class="settings-foot">
+      <span id="settings-status" class="settings-status"></span>
+      <button id="settings-save" class="primary">Save settings</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

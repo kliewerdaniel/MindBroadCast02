@@ -721,6 +721,255 @@ setInterval(async () => {
   } catch (e) { /* ignore */ }
 })();
 
+/* ── settings ──────────────────────────────────────────────────────── */
+
+const settingsBtn = document.getElementById("settings-btn");
+const settingsOverlay = document.getElementById("settings-overlay");
+const settingsClose = document.getElementById("settings-close");
+const settingsSave = document.getElementById("settings-save");
+const settingsStatus = document.getElementById("settings-status");
+const setPoll = document.getElementById("set-poll");
+const setPollHint = document.getElementById("set-poll-hint");
+const setWorld = document.getElementById("set-world");
+const setPersona = document.getElementById("set-persona");
+const setCompile = document.getElementById("set-compile");
+const feedsList = document.getElementById("feeds-list");
+const feedsCount = document.getElementById("feeds-count");
+const feedsMsg = document.getElementById("feeds-msg");
+const feedName = document.getElementById("feed-name");
+const feedUrl = document.getElementById("feed-url");
+const feedAddBtn = document.getElementById("feed-add-btn");
+
+let minPollSeconds = 30;
+
+function setSettingsStatus(text, kind) {
+  settingsStatus.textContent = text || "";
+  settingsStatus.className = "settings-status" + (kind ? " " + kind : "");
+}
+
+function setFeedsMsg(text, kind) {
+  feedsMsg.textContent = text || "";
+  feedsMsg.className = "feeds-msg" + (kind ? " " + kind : "");
+}
+
+async function openSettings() {
+  settingsOverlay.hidden = false;
+  setSettingsStatus("");
+  setFeedsMsg("");
+  await Promise.all([loadSettings(), loadFeeds()]);
+}
+
+function closeSettings() {
+  settingsOverlay.hidden = true;
+}
+
+settingsBtn.addEventListener("click", openSettings);
+settingsClose.addEventListener("click", closeSettings);
+// Click the backdrop (not the panel) to dismiss; Escape closes too.
+settingsOverlay.addEventListener("click", (e) => {
+  if (e.target === settingsOverlay) closeSettings();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !settingsOverlay.hidden) closeSettings();
+});
+
+async function loadSettings() {
+  try {
+    const res = await fetch("/api/settings");
+    const data = await res.json();
+    const s = data.settings || {};
+    minPollSeconds = data.min_poll_seconds || 30;
+    setPoll.value = s.poll_seconds ?? 120;
+    setPoll.min = minPollSeconds;
+    setPollHint.textContent = `minimum ${minPollSeconds}s — faster polling ` +
+      `does not produce more news, it just re-asks.`;
+    setWorld.checked = !!s.use_world_feeds;
+    setPersona.checked = !!s.multi_persona;
+    setCompile.value = s.max_compile_per_cycle ?? 8;
+  } catch (e) {
+    setSettingsStatus("could not load settings", "bad");
+  }
+}
+
+async function saveSettings() {
+  setSettingsStatus("saving…");
+  try {
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        poll_seconds: Number(setPoll.value),
+        use_world_feeds: setWorld.checked,
+        multi_persona: setPersona.checked,
+        max_compile_per_cycle: Number(setCompile.value),
+      }),
+    });
+    if (!res.ok) {
+      setSettingsStatus("save failed: " + res.status, "bad");
+      return;
+    }
+    const data = await res.json();
+    // Show what was ACTUALLY applied: values are clamped server-side, so the
+    // field may differ from what was typed.
+    const applied = data.settings || {};
+    setPoll.value = applied.poll_seconds ?? setPoll.value;
+    setCompile.value = applied.max_compile_per_cycle ?? setCompile.value;
+    setSettingsStatus(
+      `saved · ${applied.poll_seconds}s between cycles`, "good");
+  } catch (e) {
+    setSettingsStatus("save failed", "bad");
+  }
+}
+settingsSave.addEventListener("click", saveSettings);
+
+async function loadFeeds() {
+  feedsList.innerHTML = "";
+  try {
+    const res = await fetch("/api/feeds");
+    const data = await res.json();
+    const feeds = data.feeds || [];
+    const enabled = feeds.filter(f => f.enabled).length;
+    feedsCount.textContent = `${enabled} of ${feeds.length} enabled`;
+    if (!feeds.length) {
+      feedsList.innerHTML =
+        '<li class="feed-row"><div class="feed-main">' +
+        '<span class="feed-name">No feeds yet</span>' +
+        '<span class="feed-url">Add one below, or start the station to ' +
+        'register the world feeds.</span></div></li>';
+      return;
+    }
+    for (const f of feeds) feedsList.appendChild(feedRow(f));
+  } catch (e) {
+    setFeedsMsg("could not load feeds", "bad");
+  }
+}
+
+function feedRow(f) {
+  const li = document.createElement("li");
+  li.className = "feed-row" + (f.enabled ? "" : " off");
+
+  const toggle = document.createElement("input");
+  toggle.type = "checkbox";
+  toggle.checked = !!f.enabled;
+  toggle.title = f.enabled ? "Disable this feed" : "Enable this feed";
+  toggle.addEventListener("change", async () => {
+    try {
+      const res = await fetch(`/api/feeds/${f.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: toggle.checked }),
+      });
+      if (!res.ok) { toggle.checked = !toggle.checked; setFeedsMsg("could not update feed", "bad"); return; }
+      li.classList.toggle("off", !toggle.checked);
+      setFeedsMsg(`${f.name} ${toggle.checked ? "enabled" : "disabled"}`, "good");
+      loadFeeds();
+    } catch (e) {
+      toggle.checked = !toggle.checked;
+      setFeedsMsg("could not update feed", "bad");
+    }
+  });
+
+  const main = document.createElement("div");
+  main.className = "feed-main";
+  const name = document.createElement("span");
+  name.className = "feed-name";
+  name.textContent = f.name;
+  if (f.curated) {
+    const badge = document.createElement("span");
+    badge.className = "feed-badge";
+    badge.textContent = "world";
+    name.appendChild(badge);
+  }
+  if (f.failure_count > 0) {
+    const badge = document.createElement("span");
+    badge.className = "feed-badge warn";
+    badge.textContent = `${f.failure_count} fail`;
+    badge.title = "consecutive failed fetches";
+    name.appendChild(badge);
+  }
+  const url = document.createElement("span");
+  url.className = "feed-url";
+  url.textContent = f.endpoint;
+  url.title = f.endpoint;
+  main.append(name, url);
+
+  const actions = document.createElement("div");
+  actions.className = "feed-actions";
+  const editBtn = document.createElement("button");
+  editBtn.className = "ghost";
+  editBtn.textContent = "Edit";
+  editBtn.addEventListener("click", () => editFeed(f));
+  const delBtn = document.createElement("button");
+  delBtn.className = "ghost";
+  delBtn.textContent = "Remove";
+  delBtn.addEventListener("click", () => removeFeed(f));
+  actions.append(editBtn, delBtn);
+
+  li.append(toggle, main, actions);
+  return li;
+}
+
+async function editFeed(f) {
+  const newName = window.prompt(`Name for this feed:`, f.name);
+  if (newName === null) return;
+  const newUrl = window.prompt(`Feed URL:`, f.endpoint);
+  if (newUrl === null) return;
+  try {
+    const res = await fetch(`/api/feeds/${f.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName, endpoint: newUrl }),
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      setFeedsMsg(detail.detail || "could not edit feed", "bad");
+      return;
+    }
+    setFeedsMsg("feed updated — takes effect next cycle", "good");
+    loadFeeds();
+  } catch (e) {
+    setFeedsMsg("could not edit feed", "bad");
+  }
+}
+
+async function removeFeed(f) {
+  if (!window.confirm(`Remove "${f.name}"?`)) return;
+  try {
+    const res = await fetch(`/api/feeds/${f.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      setFeedsMsg(detail.detail || "could not remove feed", "bad");
+      return;
+    }
+    setFeedsMsg("feed removed", "good");
+    loadFeeds();
+  } catch (e) {
+    setFeedsMsg("could not remove feed", "bad");
+  }
+}
+
+feedAddBtn.addEventListener("click", async () => {
+  const url = feedUrl.value.trim();
+  if (!url) { setFeedsMsg("a feed URL is required", "bad"); return; }
+  setFeedsMsg("adding…");
+  try {
+    const res = await fetch("/api/feeds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: feedName.value.trim(), endpoint: url }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setFeedsMsg(data.detail || "could not add feed", "bad"); return; }
+    setFeedsMsg(data.existed
+      ? "that feed was already registered"
+      : `added ${data.name}`, "good");
+    feedName.value = ""; feedUrl.value = "";
+    loadFeeds();
+  } catch (e) {
+    setFeedsMsg("could not add feed", "bad");
+  }
+});
+
 renderRegions();
 refreshHealth();
 setInterval(refreshHealth, 15000);

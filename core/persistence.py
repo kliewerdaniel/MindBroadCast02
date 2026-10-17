@@ -802,6 +802,67 @@ class WorldStore:
             )
         conn.commit()
 
+    async def update_source(self, source: Source) -> None:
+        """Edit a source's name, endpoint, or enabled flag.
+
+        The endpoint is what the fetcher uses and what registration is keyed
+        on, so changing it changes where news comes from. Kept separate from
+        add_source so a caller cannot accidentally create a duplicate row when
+        the intent was an edit.
+        """
+        conn = self.db.connect()
+        with self.db.transaction():
+            conn.execute(
+                """UPDATE sources SET name = ?, endpoint = ?, enabled = ?,
+                   poll_interval_seconds = ?, updated_at = ?
+                   WHERE id = ?""",
+                (source.name, source.endpoint, int(source.enabled),
+                 source.poll_interval_seconds, _dt_to_str(_utcnow()),
+                 source.id),
+            )
+            self._emit_event(
+                conn, "SourceUpdated", "source", source.id,
+                {"name": source.name, "endpoint": source.endpoint,
+                 "enabled": source.enabled},
+            )
+
+    async def set_source_enabled(self, source_id: str, enabled: bool) -> bool:
+        """Enable or disable a feed without deleting it.
+
+        Returns False when no such source exists, so the caller can 404 rather
+        than silently succeeding.
+        """
+        conn = self.db.connect()
+        cursor = conn.execute(
+            "UPDATE sources SET enabled = ?, updated_at = ? WHERE id = ?",
+            (int(enabled), _dt_to_str(_utcnow()), source_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+    async def delete_source(self, source_id: str) -> bool:
+        """Remove a feed.
+
+        Refuses while articles still reference it: deleting the row would
+        orphan every article and claim compiled from that feed, and the world
+        model's provenance would point at nothing. Disable it instead.
+        """
+        conn = self.db.connect()
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM articles WHERE source_id = ?",
+            (source_id,)).fetchone()
+        if row is not None and row["n"]:
+            raise PersistenceError(
+                f"source {source_id} has {row['n']} article(s); disable it "
+                f"instead of deleting, or the world model loses provenance")
+        with self.db.transaction():
+            cursor = conn.execute("DELETE FROM sources WHERE id = ?",
+                                  (source_id,))
+            if cursor.rowcount:
+                self._emit_event(
+                    conn, "SourceRemoved", "source", source_id, {})
+        return cursor.rowcount > 0
+
     def _row_to_source(self, row: sqlite3.Row) -> Source:
         return Source(
             id=row["id"], name=row["name"],

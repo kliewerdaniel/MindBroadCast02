@@ -495,16 +495,22 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     # compiler turns into multiple claims per story — the basis for longform.
     # BBC's feed carries only a one-line summary per entry (article pages are
     # client-rendered), so it can only ever yield one-sentence broadcasts.
+    from .settings import settings_store
+    settings = settings_store.load()
+
     name = body.get("source", "NPR News")
     endpoint = body.get("endpoint", "https://feeds.npr.org/1001/rss.xml")
-    poll = float(body.get("poll_seconds", 120))
+    # The saved setting is the default; an explicit request still wins, so the
+    # UI can override per-run without the user having to change a setting.
+    poll = float(body.get("poll_seconds") or settings.poll_seconds)
     # Optional multi-source: a list of {source, endpoint} registers several
     # feeds and runs the loop unpinned so it rotates across them (§3).
     extra = body.get("sources") or []
     # world=True registers the full curated world registry (all regions) and
     # runs unpinned so the loop rotates across every region — the station
-    # represents the world, not one or two outlets.
-    use_world = bool(body.get("world", False))
+    # represents the world, not one or two outlets. The saved setting decides
+    # the default so the user's choice persists across restarts.
+    use_world = bool(body.get("world", settings.use_world_feeds))
 
     def station_loop() -> None:
         loop = asyncio.new_event_loop()
@@ -619,6 +625,136 @@ def _on_station_cycle(cycle: Any) -> None:
         "aired": cycle.aired,
         "silent_reason": cycle.silent_reason,
     })
+
+
+# ── feeds: edit where the news comes from ────────────────────────────
+# The station's sources are rows in the world model's sources table. These
+# endpoints let the user see and change them without touching the database.
+
+@app.get("/api/feeds")
+async def list_feeds() -> Dict[str, Any]:
+    """Every registered feed, with the operational state that matters.
+
+    Includes the curated world registry, marked as such, so the user can see
+    what the station watches by default and disable a region they do not want
+    rather than wondering where a story came from.
+    """
+    from .world_sources import all_feeds
+
+    world_urls = {s.url for s in all_feeds()}
+    sources = await state.autonomous.store.list_sources()
+    return {
+        "feeds": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "endpoint": s.endpoint,
+                "enabled": s.enabled,
+                "curated": s.endpoint in world_urls,
+                "failure_count": s.failure_count,
+                "last_success_at": (s.last_success_at.isoformat()
+                                    if s.last_success_at else None),
+                "last_attempt_at": (s.last_attempt_at.isoformat()
+                                    if s.last_attempt_at else None),
+            }
+            for s in sources
+        ],
+        "world_available": sorted(world_urls),
+    }
+
+
+@app.post("/api/feeds")
+async def add_feed(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Register a new feed, or return the existing one for that endpoint."""
+    name = (body.get("name") or "").strip()
+    endpoint = (body.get("endpoint") or "").strip()
+    if not endpoint:
+        raise HTTPException(400, "endpoint is required")
+    if not endpoint.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "endpoint must be an http(s) URL")
+
+    existing = await state.autonomous.store.find_source_by_endpoint(endpoint)
+    if existing is not None:
+        return {"id": existing.id, "name": existing.name, "existed": True}
+    source_id = await state.autonomous.register_source(
+        name or endpoint, endpoint)
+    return {"id": source_id, "name": name or endpoint, "existed": False}
+
+
+@app.patch("/api/feeds/{source_id}")
+async def edit_feed(source_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Edit a feed's name, endpoint, or enabled flag."""
+    store = state.autonomous.store
+    source = await store.get_source(source_id)
+    if source is None:
+        raise HTTPException(404, "no such feed")
+
+    if "name" in body and body["name"] is not None:
+        source.name = str(body["name"]).strip() or source.name
+    if "endpoint" in body and body["endpoint"] is not None:
+        endpoint = str(body["endpoint"]).strip()
+        if not endpoint.lower().startswith(("http://", "https://")):
+            raise HTTPException(400, "endpoint must be an http(s) URL")
+        source.endpoint = endpoint
+    if "enabled" in body and body["enabled"] is not None:
+        source.enabled = bool(body["enabled"])
+    if "poll_interval_seconds" in body and body["poll_interval_seconds"]:
+        try:
+            source.poll_interval_seconds = max(
+                30, int(body["poll_interval_seconds"]))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "poll_interval_seconds must be an integer")
+
+    await store.update_source(source)
+    return {"id": source.id, "name": source.name, "endpoint": source.endpoint,
+            "enabled": source.enabled}
+
+
+@app.delete("/api/feeds/{source_id}")
+async def remove_feed(source_id: str) -> Dict[str, Any]:
+    """Delete a feed. Refuses while articles still reference it."""
+    from ..persistence import PersistenceError
+    try:
+        removed = await state.autonomous.store.delete_source(source_id)
+    except PersistenceError as error:
+        raise HTTPException(409, str(error))
+    if not removed:
+        raise HTTPException(404, "no such feed")
+    return {"removed": True, "id": source_id}
+
+
+# ── settings: the station's knobs, editable in the app ───────────────
+
+@app.get("/api/settings")
+async def get_settings() -> Dict[str, Any]:
+    from .settings import MIN_POLL_SECONDS, settings_store
+    return {"settings": settings_store.load().to_dict(),
+            "min_poll_seconds": MIN_POLL_SECONDS}
+
+
+@app.put("/api/settings")
+async def put_settings(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Update settings. Invalid values are clamped, never rejected outright.
+
+    A user setting a 5-second poll gets the safe floor and the response says
+    what was applied, rather than an error that leaves them guessing.
+    """
+    from .settings import StationSettings, settings_store
+
+    current = settings_store.load()
+    merged = current.to_dict()
+    merged.update(body or {})
+    updated = StationSettings.from_mapping(merged)
+    settings_store.save(updated)
+
+    # Apply the live ones: a poll change should take effect on the next wait
+    # rather than requiring a restart.
+    if _station.get("running"):
+        try:
+            _station["poll_seconds"] = updated.poll_seconds
+        except Exception:                        # noqa: BLE001
+            pass
+    return {"settings": updated.to_dict()}
 
 
 @app.get("/", response_class=HTMLResponse)

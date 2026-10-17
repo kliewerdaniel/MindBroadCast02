@@ -44,10 +44,18 @@ def import_legacy_schema(store, legacy_conn: sqlite3.Connection) -> Dict[str, in
     """Import legacy rows into a Phase 1 WorldStore.
 
     Returns counts of imported records. `store` must already be migrated.
+
+    Uses a private event loop rather than ``asyncio.get_event_loop()``. That
+    call raises when a loop was created and closed earlier in the process (a
+    prior test, or any code that ran ``asyncio.run``), which made this import
+    depend on unrelated code having left the global loop alone. A private loop
+    cannot be disturbed by, or disturb, anything else.
     """
-    return asyncio.get_event_loop().run_until_complete(
-        _import_async(store, legacy_conn)
-    )
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_import_async(store, legacy_conn))
+    finally:
+        loop.close()
 
 
 async def _import_async(store, legacy_conn: sqlite3.Connection) -> Dict[str, int]:
