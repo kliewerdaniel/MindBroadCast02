@@ -36,7 +36,15 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 
 # ── desktop app ──────────────────────────────────────────────────────
+# pywebview renders the window; on macOS it needs the PyObjC Cocoa/WebKit
+# bridge, which is NOT a dependency of pywebview itself. Without it the window
+# silently fails to appear and the app looks hung. Declared here so a clean
+# install (and the PyInstaller build) actually has it.
 pywebview>=5.0.0
+pyobjc-core>=10.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+pyobjc-framework-WebKit>=10.0; sys_platform == "darwin"
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
 
 # test harness ───────────────────────────────────────────────────────────
 pytest>=8.0.0

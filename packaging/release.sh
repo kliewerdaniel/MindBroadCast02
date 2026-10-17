@@ -68,15 +68,24 @@ if [ "$(uname)" = "Darwin" ]; then
             --name "$EXE" \
             --paths "$ROOT" \
             --add-data "core/inference/console_static:core/inference/console_static" \
+            --hidden-import "core.desktop" \
             --hidden-import "core.inference.console" \
+            --hidden-import "core.inference.tts_server" \
+            --hidden-import "webview" \
+            --hidden-import "webview.platforms.cocoa" \
+            --hidden-import "objc" \
+            --hidden-import "AppKit" \
+            --hidden-import "Foundation" \
+            --hidden-import "WebKit" \
             --hidden-import "uvicorn.logging" \
             --hidden-import "uvicorn.loops.auto" \
             --hidden-import "uvicorn.protocols.http.auto" \
             --hidden-import "uvicorn.protocols.websockets.auto" \
             --hidden-import "uvicorn.lifespan.on" \
-            --hidden-import "pywebview" \
             --hidden-import "core.config" \
             --hidden-import "core.inference.lightweight" \
+            --collect-submodules "webview" \
+            --collect-submodules "objc" \
             packaging/macos/console_wrapper.py
         if [ -f "dist/$EXE" ]; then
             rm -rf "$OUT/$APP"

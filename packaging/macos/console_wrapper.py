@@ -1,17 +1,20 @@
-"""PyInstaller one-file entry point for the MindBroadcast console.
+"""PyInstaller entry point for the MindBroadcast desktop app.
 
-The desktop window points at http://127.0.0.1:7862, where this module's FastAPI
-app serves the console and its SSE transcript + audio endpoints. The app is
-localhost-only, by the same fail-closed rule as every inference endpoint.
-
-Run it on every platform the PyInstaller `--onefile` build lands on; only the
---add-data separator differs (':' on macOS/Linux, ';' on Windows).
+This is the frozen counterpart of `python -m core.desktop`: it opens the native
+window and starts the servers behind it. The console is a FastAPI app served on
+127.0.0.1:7862, localhost-only by the same fail-closed rule as every inference
+endpoint.
 
 Frozen builds are self-contained: the `core` package is bundled by PyInstaller
 (see packaging/release.sh, which passes --paths for the project root and lists
-the console as a hidden import). In a frozen bundle `__file__` points inside
-the temporary extraction dir, so we must NOT prepend that dir to sys.path —
-PyInstaller's own loader already resolves `core` from the archive.
+the needed modules as hidden imports). In a frozen bundle `__file__` points
+inside the temporary extraction dir, so we must NOT prepend that dir to
+sys.path — PyInstaller's own loader already resolves `core` from the archive.
+
+An earlier revision of this file only called `uvicorn.run()`. That made the
+.app a headless server with no window: it launched, served HTTP, and macOS
+reported the app as "not responding" because no Cocoa event loop ever started.
+The window is the product; the server is an implementation detail behind it.
 """
 
 import os
@@ -30,10 +33,8 @@ if not getattr(sys, "frozen", False):
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
 
-from uvicorn import run
-
-import core.inference.console as _console
+from core.desktop import main
 
 
 if __name__ == "__main__":
-    run(_console.app, host="127.0.0.1", port=7862)
+    main()

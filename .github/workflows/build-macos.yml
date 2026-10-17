@@ -85,6 +85,25 @@ jobs:
           # would. Running the inner binary directly would bypass Info.plist
           # and hide a bundle that cannot actually open.
           open "$APP"
+
+          # A window on screen is the actual product. Asserting only that HTTP
+          # answers would pass for a headless server wearing an .app costume —
+          # which is exactly the bug this test exists to catch.
+          WINDOWED=0
+          for i in $(seq 1 40); do
+            if python3 packaging/macos/check_window.py; then
+              echo "window on screen after ${i} attempt(s)"; WINDOWED=1; break
+            fi
+            sleep 2
+          done
+          if [ "$WINDOWED" != "1" ]; then
+            echo "::error::the .app process started but no window appeared"
+            pkill -f "MindBroadcast.app/Contents/MacOS" || true
+            hdiutil detach "$MP" >/dev/null || true
+            exit 1
+          fi
+
+          # And the console behind the window must answer.
           UP=0
           for i in $(seq 1 30); do
             if curl -sf --max-time 3 http://127.0.0.1:7862/api/health >/dev/null; then
@@ -93,7 +112,7 @@ jobs:
             sleep 2
           done
           if [ "$UP" != "1" ]; then
-            echo "::error::the .app launched but its console never became reachable"
+            echo "::error::window appeared but the console never became reachable"
             pkill -f "MindBroadcast.app/Contents/MacOS" || true
             hdiutil detach "$MP" >/dev/null || true
             exit 1
