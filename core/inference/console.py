@@ -181,6 +181,13 @@ class ConsoleState:
         self.context = self._load_context()
         self.llm = self.context.llm_provider()
         self.tts = self.context.tts_provider()
+        # The backend this machine can run can IMPROVE after startup: the
+        # Qwen3-TTS server takes seconds to load its model, and the console
+        # starts at the same moment. Probing once meant that if the model was
+        # not ready yet the station was pinned to espeak for the whole session
+        # — the cloned voice (chris.wav) silently disappeared. Remember whether
+        # the choice was a fallback so it can be upgraded when TTS comes up.
+        self._tts_upgradable = not self._tts_is_cloned()
         self.runtime = LiveRuntime(self.llm, self.tts,
                                    config=RuntimeConfig(max_segments=0))
         # The autonomous broadcaster shares the runtime, so both the demo
@@ -191,6 +198,42 @@ class ConsoleState:
             on_segment=self.on_segment)
         self.segments: List[Dict[str, Any]] = []   # ordered, playable
         _SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _tts_is_cloned(self) -> bool:
+        """Whether the current TTS backend can speak in the cloned voice."""
+        return getattr(self.context, "tts_backend", "") in (
+            "qwen3-tts-http", "qwen3-tts")
+
+    async def refresh_tts_backend(self) -> bool:
+        """Upgrade to a better TTS backend if one has become available.
+
+        Called before a cycle airs. If the station started before the Qwen3-TTS
+        model finished loading, it was pinned to a fallback voice; once the
+        model is up, switch to it so the station speaks in the cloned voice
+        instead of a synthetic one for the rest of the session.
+
+        Returns True if the backend changed. Fail-closed: only ever moves to a
+        backend whose real pre-flight passes, and never downgrades.
+        """
+        if not self._tts_upgradable:
+            return False
+        try:
+            best = _best_available_tts_backend()
+        except Exception:                        # noqa: BLE001
+            return False
+        if not best or best == getattr(self.context, "tts_backend", ""):
+            return False
+        if best not in ("qwen3-tts-http", "qwen3-tts"):
+            return False   # only upgrade TO the cloned voice, never sideways
+
+        self.context.tts_backend = best
+        # Rebuild the provider and the runtime's reference to it.
+        self.context._tts_provider = None
+        self.tts = self.context.tts_provider()
+        self.runtime.tts = self.tts
+        self._tts_upgradable = False
+        _broadcast({"type": "voice", "backend": best, "cloned": True})
+        return True
 
     @staticmethod
     def _load_context():
@@ -257,6 +300,31 @@ class ConsoleState:
             "tts": await self.tts.health_check(),
         }
 
+    def voice_report(self) -> Dict[str, Any]:
+        """Which voice is actually speaking, and whether it is the cloned one.
+
+        The station's voice is Chris's, cloned from chris.wav. When the clip is
+        missing or the TTS stack cannot do zero-shot cloning (espeak, say), the
+        station still speaks — in a different voice. That difference was
+        invisible, so a lost voice looked like a working station. Report it.
+        """
+        import os
+
+        backend = getattr(self.context, "tts_backend", "unknown")
+        cloning = backend in ("qwen3-tts-http", "qwen3-tts")
+        try:
+            from .voices import VoiceRegistry
+            clip = VoiceRegistry().chris_clip_path()
+        except Exception:                        # noqa: BLE001
+            clip = None
+        return {
+            "backend": backend,
+            "cloning": cloning,
+            "clip": clip,
+            "clip_present": bool(clip and os.path.isfile(clip)),
+            "cloned_voice": bool(cloning and clip and os.path.isfile(clip)),
+        }
+
 
 state = ConsoleState()
 
@@ -266,7 +334,8 @@ app = FastAPI(title="MindBroadcast Console")
 @app.get("/api/health")
 async def health() -> Dict[str, Any]:
     status = await state.health()
-    return {"ok": all(status.values()), "services": status}
+    return {"ok": all(status.values()), "services": status,
+            "voice": state.voice_report()}
 
 
 @app.get("/api/segments")
@@ -403,7 +472,8 @@ async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
 
 _station: Dict[str, Any] = {"running": False, "thread": None,
                             "source": None, "endpoint": None,
-                            "poll_seconds": 120.0, "started_at": None}
+                            "poll_seconds": 120.0, "started_at": None,
+                            "last_progress": None}
 
 
 @app.post("/api/station/start")
@@ -439,6 +509,16 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     def station_loop() -> None:
         loop = asyncio.new_event_loop()
         try:
+            # Progress events: the cycle's phases, so the UI can show movement.
+            state.autonomous.on_progress = _on_station_progress
+            # Before the first cycle airs, give the Qwen3-TTS model a chance to
+            # finish loading: the console probes once at startup, and if the
+            # model was not ready it was pinned to a fallback voice for the
+            # whole session — the cloned voice silently disappeared.
+            try:
+                loop.run_until_complete(state.refresh_tts_backend())
+            except Exception:                    # noqa: BLE001
+                pass
             if use_world:
                 loop.run_until_complete(
                     state.autonomous.register_world_sources())
@@ -456,7 +536,7 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
                         "source": source_label})
             loop.run_until_complete(state.autonomous.run_forever(
                 source_id=None, poll_seconds=poll,
-                on_cycle=_on_station_cycle))
+                on_cycle=_on_station_cycle, on_wait=state.refresh_tts_backend))
         except Exception as error:               # noqa: BLE001
             _broadcast({"type": "error", "message": str(error)})
         finally:
@@ -492,6 +572,12 @@ async def station_stop() -> Dict[str, Any]:
 
 @app.get("/api/station")
 async def station_status() -> Dict[str, Any]:
+    """Current station state, including what the cycle is doing right now.
+
+    The UI polls this so a fresh page load (or a missed SSE event) still shows
+    the real phase rather than a stale label.
+    """
+    last = _station.get("last_progress") or {}
     return {
         "running": _station["running"],
         "source": _station["source"],
@@ -499,7 +585,27 @@ async def station_status() -> Dict[str, Any]:
         "started_at": _station["started_at"],
         "cycles": len(state.autonomous.cycles),
         "aired": sum(1 for c in state.autonomous.cycles if c.aired),
+        "phase": last.get("phase", ""),
+        "detail": last.get("detail", ""),
+        "current": last.get("current", 0),
+        "total": last.get("total", 0),
     }
+
+
+def _on_station_progress(event: Any) -> None:
+    """Push cycle phase progress to SSE subscribers.
+
+    A cycle takes minutes. These events are what let the UI show movement
+    instead of a single "running" line that never changes.
+    """
+    if isinstance(event, dict):
+        payload = dict(event)
+    else:
+        payload = {"phase": "working", "detail": str(event)}
+    # Remember it so /api/station can report the phase to a late joiner.
+    _station["last_progress"] = payload
+    payload["type"] = "progress"
+    _broadcast(payload)
 
 
 def _on_station_cycle(cycle: Any) -> None:

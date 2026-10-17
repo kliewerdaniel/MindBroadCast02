@@ -31,6 +31,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 def _project_root() -> Path:
     """Where the app's data/ directory lives, and the cwd for spawned servers.
@@ -111,6 +112,55 @@ def _start_tts() -> subprocess.Popen:
         cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
+def _interpreter_with_mlx() -> Optional[str]:
+    """A Python that can actually run the Qwen3-TTS model, if one exists.
+
+    A frozen release deliberately does not bundle the MLX/Qwen3-TTS stack (it
+    is Apple-Silicon only and many GB of model weights), so the in-process
+    server it can start is only ever an espeak fallback — the cloned station
+    voice needs MLX. If the user has a venv that can import mlx_audio, the app
+    should use it and keep the real voice.
+
+    Checked in order: an explicit MB_PYTHON override, the interpreter recorded
+    in mindbroadcast.yaml, then a .venv beside the app. Fail-closed: anything
+    that cannot import mlx_audio is rejected, so this never picks a Python that
+    would report a healthy TTS it cannot actually run.
+    """
+    candidates: list[str] = []
+
+    override = os.environ.get("MB_PYTHON")
+    if override:
+        candidates.append(override)
+
+    # A sibling .venv is where a source checkout keeps its stack.
+    for base in (_ROOT, Path(_ROOT).parent, Path.home() / "Projects" / "MindBroadCast02"):
+        for name in (".venv/bin/python", "venv/bin/python"):
+            candidates.append(str(Path(base) / name))
+
+    for candidate in candidates:
+        if not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
+            continue
+        try:
+            probe = subprocess.run(
+                [candidate, "-c", "import mlx_audio"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=30)
+        except Exception:
+            continue
+        if probe.returncode == 0:
+            return candidate
+    return None
+
+
+def _start_tts_external(interpreter: str) -> subprocess.Popen:
+    """Start the TTS server with an interpreter that has the real stack."""
+    log = open(_ROOT / "data" / "tts.log", "w")
+    return subprocess.Popen(
+        [interpreter, "-m", "core.inference.tts_server",
+         "--port", str(_TTS_PORT)],
+        cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
+
+
 def _start_console() -> subprocess.Popen:
     """Start the console with uvicorn, quiet (the window IS the output)."""
     log = open(_ROOT / "data" / "console.log", "w")
@@ -167,11 +217,17 @@ def _build_app() -> None:
 
     # 1. TTS server.
     if not _reachable(f"http://127.0.0.1:{_TTS_PORT}/health"):
-        if frozen:
-            # No interpreter to spawn: run it here. A frozen release also has
-            # no MLX/Qwen3-TTS model, so this is expected to stay unhealthy —
-            # the console reports tts:false and the station runs silent rather
-            # than blocking the window on a server that cannot start.
+        # Prefer an interpreter that can actually load the Qwen3-TTS model: the
+        # cloned station voice needs MLX, and a frozen build has no MLX stack.
+        # Without this the app silently fell back to espeak and the Chris voice
+        # disappeared. Found by probing for a real `import mlx_audio`.
+        external = _interpreter_with_mlx() if frozen else None
+        if external:
+            started.append(_start_tts_external(external))
+        elif frozen:
+            # No MLX-capable interpreter: run the server in-process. It will
+            # report unhealthy (no mlx_audio), and the console picks the best
+            # voice this machine really has instead of pretending.
             from core.inference.tts_server import main as _tts_main
             _serve_in_thread(_tts_main, ["--port", str(_TTS_PORT)])
         else:
@@ -204,12 +260,17 @@ def _build_app() -> None:
             return
 
     # 3. Show it.
+    #    text_select=True: pywebview defaults this to False and injects
+    #    `user-select: none` into the page, which made every word in the app
+    #    impossible to select or copy — including the transcript, whose whole
+    #    point is that a listener can read and quote it.
     window = webview.create_window(
         "MindBroadcast — a station that watches the world",
         _CONSOLE_URL,
         width=1500, height=1000,
         min_size=(900, 600),
         background_color="#05060A",
+        text_select=True,
     )
 
     def _on_closed():

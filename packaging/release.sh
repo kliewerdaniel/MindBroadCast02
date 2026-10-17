@@ -68,6 +68,7 @@ if [ "$(uname)" = "Darwin" ]; then
             --name "$EXE" \
             --paths "$ROOT" \
             --add-data "core/inference/console_static:core/inference/console_static" \
+            --add-data "chris.wav:." \
             --hidden-import "core.desktop" \
             --hidden-import "core.inference.console" \
             --hidden-import "core.inference.tts_server" \
@@ -259,6 +260,7 @@ MINGW*|MSYS*|CYGWIN*|Windows_NT)
             --name "MindBroadcast-win-$ARCH" \
             --paths "$ROOT" \
             --add-data "core/inference/console_static;core/inference/console_static" \
+            --add-data "chris.wav;." \
             --hidden-import "core.inference.console" \
             --hidden-import "uvicorn.logging" \
             --hidden-import "uvicorn.loops.auto" \

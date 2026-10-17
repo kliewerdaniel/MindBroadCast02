@@ -31,6 +31,13 @@ const stationDot = document.getElementById("station-dot");
 const stationText = document.getElementById("station-text");
 const cycleInfo = document.getElementById("cycle-info");
 const runState = document.getElementById("run-state");
+const runElapsed = document.getElementById("run-elapsed");
+const activityPhase = document.getElementById("activity-phase");
+const activityFill = document.getElementById("activity-fill");
+const activityDetail = document.getElementById("activity-detail");
+const activityLog = document.getElementById("activity-log");
+const voiceDot = document.getElementById("voice-dot");
+const voiceText = document.getElementById("voice-text");
 const fieldMode = document.getElementById("field-mode");
 const audioHint = document.getElementById("audio-hint");
 
@@ -214,9 +221,26 @@ async function refreshHealth() {
     const s = data.services || {};
     healthText.textContent = ok ? "llm ✓ tts ✓"
       : `degraded (llm ${s.llm ? "✓" : "✗"} tts ${s.tts ? "✓" : "✗"})`;
+
+    // Which voice is actually speaking. The station's voice is Chris's,
+    // cloned from chris.wav; when the clip or the cloning stack is missing it
+    // silently speaks in a different voice. Say so instead of hiding it.
+    const v = data.voice || {};
+    if (v.cloned_voice) {
+      voiceDot.className = "dot ok";
+      voiceText.textContent = "voice: chris";
+    } else if (v.clip_present) {
+      voiceDot.className = "dot bad";
+      voiceText.textContent = `voice: ${v.backend || "?"} (not cloned)`;
+    } else {
+      voiceDot.className = "dot bad";
+      voiceText.textContent = `voice: ${v.backend || "none"} · chris.wav missing`;
+    }
   } catch (e) {
     healthDot.className = "dot bad";
     healthText.textContent = "console unreachable";
+    voiceDot.className = "dot unknown";
+    voiceText.textContent = "voice: ?";
   }
 }
 
@@ -461,12 +485,19 @@ function connect() {
         if (data.state === "on_air") {
           setFieldMode("watching");
           field.pulse = 1;
+          if (runStartedAt === null) markRunStart();
+          pushActivity(`station on air${data.source ? " — " + data.source : ""}`);
         } else {
           setFieldMode("dormant");
+          clearRunStart();
+          pushActivity("station stopped");
         }
         break;
       case "cycle":
         onCycle(data);
+        break;
+      case "progress":
+        onProgress(data);
         break;
       case "done":
         runState.textContent = `done — ${data.segments} segment(s)` +
@@ -483,6 +514,63 @@ function connect() {
   };
   es.onerror = () => { /* browser auto-reconnects */ };
 }
+
+function onProgress(data) {
+  // The station reports each phase of its cycle. Show it as a live activity
+  // line plus a short log, so the listener can always see that work is
+  // happening rather than wondering whether it is hung.
+  const phase = (data.phase || "working").toLowerCase();
+  activityPhase.textContent = phase;
+  activityPhase.classList.toggle("busy", phase !== "idle" && phase !== "waiting");
+
+  if (data.total && data.current) {
+    const pct = Math.min(100, Math.round((data.current / data.total) * 100));
+    activityFill.classList.remove("indeterminate");
+    activityFill.style.width = pct + "%";
+  } else if (phase === "waiting") {
+    // Countdown between cycles: show how far through the wait we are.
+    const total = data.total || 1;
+    const left = data.current || 0;
+    const pct = Math.min(100, Math.max(0, Math.round(((total - left) / total) * 100)));
+    activityFill.classList.remove("indeterminate");
+    activityFill.style.width = pct + "%";
+  } else {
+    activityFill.classList.add("indeterminate");
+  }
+
+  let detail = data.detail || "";
+  if (phase === "waiting") {
+    detail = `next cycle in ${data.current}s`;
+    // A countdown must not look frozen: don't log every tick.
+    activityDetail.textContent = detail;
+    return;
+  }
+  activityDetail.textContent = detail || "—";
+  if (detail) pushActivity(`${phase} — ${detail}`);
+}
+
+function pushActivity(line) {
+  if (!activityLog) return;
+  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit",
+    minute: "2-digit", second: "2-digit" });
+  const li = document.createElement("li");
+  li.textContent = `${stamp}  ${line}`;
+  activityLog.prepend(li);
+  while (activityLog.children.length > 40) {
+    activityLog.removeChild(activityLog.lastChild);
+  }
+}
+
+/* Elapsed-time readout: proves the process is alive between events. */
+let runStartedAt = null;
+function markRunStart() { runStartedAt = Date.now(); }
+function clearRunStart() { runStartedAt = null; runElapsed.textContent = ""; }
+setInterval(() => {
+  if (runStartedAt === null || !runElapsed) return;
+  const secs = Math.floor((Date.now() - runStartedAt) / 1000);
+  const m = Math.floor(secs / 60), s = secs % 60;
+  runElapsed.textContent = `· running ${m}:${String(s).padStart(2, "0")}`;
+}, 1000);
 
 function onCycle(data) {
   document.getElementById("stat-articles").textContent = data.articles || 0;
@@ -568,6 +656,8 @@ async function toggleStation() {
     if (!stationRunning && res.ok) {
       setStationUI(true);
       runState.textContent = "world station started";
+      markRunStart();
+      pushActivity("station started — watching the world");
       setFieldMode("watching");
       field.pulse = 1;
     } else if (stationRunning && res.ok) {
@@ -581,6 +671,29 @@ async function toggleStation() {
 }
 stationBtn.addEventListener("click", toggleStation);
 
+// Poll the station's phase so the UI shows progress even if an SSE event was
+// missed (a reconnect, or a page loaded mid-cycle). This is the belt to SSE's
+// braces: the listener should never have to guess whether work is happening.
+setInterval(async () => {
+  if (!stationRunning) return;
+  try {
+    const res = await fetch("/api/station");
+    const data = await res.json();
+    if (data.running === false) { setStationUI(false); clearRunStart(); return; }
+    if (data.phase) {
+      onProgress({ phase: data.phase, detail: data.detail,
+                   current: data.current, total: data.total });
+    }
+    if (data.started_at) {
+      const started = new Date(data.started_at).getTime();
+      if (!Number.isNaN(started)) runStartedAt = started;
+    }
+    cycleInfo.textContent =
+      `cycle ${data.cycles} · aired ${data.aired}` +
+      (data.phase ? ` · ${data.phase}` : "");
+  } catch (e) { /* ignore */ }
+}, 3000);
+
 // Reflect the server's station state on load.
 (async function syncStation() {
   try {
@@ -588,6 +701,14 @@ stationBtn.addEventListener("click", toggleStation);
     const data = await res.json();
     setStationUI(!!data.running);
     setFieldMode(data.running ? "watching" : "dormant");
+    if (data.running) {
+      if (data.started_at) runStartedAt = new Date(data.started_at).getTime();
+      if (data.phase) {
+        onProgress({ phase: data.phase, detail: data.detail,
+                     current: data.current, total: data.total });
+      }
+      pushActivity("station already running — reconnected");
+    }
   } catch (e) { /* ignore */ }
 })();
 

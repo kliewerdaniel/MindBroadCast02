@@ -27,6 +27,7 @@
     </div>
     <div class="vitals">
       <div class="vital"><span id="health-dot" class="dot unknown"></span><span id="health-text">connecting</span></div>
+      <div class="vital"><span id="voice-dot" class="dot unknown"></span><span id="voice-text">voice</span></div>
       <div class="vital"><span id="station-dot" class="dot unknown"></span><span id="station-text">idle</span></div>
     </div>
   </header>
@@ -65,6 +66,20 @@
       </div>
       <div class="run-row">
         <span id="run-state" class="run-state"></span>
+        <span id="run-elapsed" class="run-elapsed"></span>
+      </div>
+
+      <!-- Live activity: what the station is doing right now. A cycle takes
+           minutes, so without this a healthy station and a hung one look
+           identical. -->
+      <div class="activity" id="activity">
+        <div class="activity-head">
+          <span class="activity-label">ACTIVITY</span>
+          <span id="activity-phase" class="activity-phase">idle</span>
+        </div>
+        <div class="activity-bar"><div id="activity-fill" class="activity-fill"></div></div>
+        <div id="activity-detail" class="activity-detail">—</div>
+        <ul id="activity-log" class="activity-log"></ul>
       </div>
 
       <div id="cycle-info" class="cycle-info"></div>

@@ -20,8 +20,60 @@ from typing import Dict, List, Optional
 # The single voice the station speaks in. A zero-shot reference clip pins the
 # timbre for every segment, across personas and stories.
 _HERE = os.path.dirname(os.path.abspath(__file__))          # core/inference
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(_HERE))     # repo root
-_CHRIS_CLIP = os.path.join(_PROJECT_ROOT, "chris.wav")
+
+
+def _candidate_clip_dirs() -> List[str]:
+    """Everywhere chris.wav may legitimately live, best first.
+
+    A frozen one-file build extracts to an ephemeral temp dir, so resolving the
+    clip from ``__file__`` pointed at a path that is deleted on quit and never
+    contained the clip to begin with — the station silently lost its voice and
+    fell back to a synthetic one. The clip is bundled into the app, but the
+    user's own copy (which they can replace) must win, so the data dir comes
+    first.
+    """
+    import sys
+
+    dirs: List[str] = []
+
+    # 1. The user's data dir — where a replaced/updated clip belongs, and the
+    #    only writable location for a frozen .app inside a read-only DMG.
+    dirs.append(os.path.join(os.path.expanduser("~"), ".mindbroadcast"))
+    dirs.append(os.path.join(os.path.expanduser("~"), ".mindbroadcast", "data"))
+
+    if getattr(sys, "frozen", False):
+        # 2. Beside the executable (a user may drop the clip next to the app).
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        dirs.append(exe_dir)
+        dirs.append(os.path.join(exe_dir, "..", "Resources"))
+        # 3. The bundled copy, inside PyInstaller's extraction dir. sys._MEIPASS
+        #    is the documented root for bundled data.
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            dirs.append(meipass)
+            dirs.append(os.path.join(meipass, "core", "inference"))
+    else:
+        # 2. A source run: the repo root, as before.
+        dirs.append(os.path.dirname(os.path.dirname(_HERE)))
+
+    return dirs
+
+
+def _resolve_chris_clip() -> str:
+    """The path the station's voice is pinned to.
+
+    Returns the first existing chris.wav, or the conventional project-root path
+    when none exists (so error messages name a real location rather than None).
+    """
+    for directory in _candidate_clip_dirs():
+        candidate = os.path.join(directory, "chris.wav")
+        if os.path.isfile(candidate):
+            return candidate
+    # Nothing found: name the most likely place the user should put it.
+    return os.path.join(_candidate_clip_dirs()[0], "chris.wav")
+
+
+_CHRIS_CLIP = _resolve_chris_clip()
 
 # Transcript of chris.wav — its own words, so cloning conditions on what the
 # clip actually says. If unknown, leave None; the model clones from audio.

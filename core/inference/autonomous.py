@@ -77,6 +77,11 @@ class AutonomousBroadcaster:
     ):
         self.runtime = runtime
         self.on_segment = on_segment
+        # Progress callback: called with a short dict as the cycle moves through
+        # its phases. A cycle takes minutes (25 feeds, then LLM compilation),
+        # and without this the UI could only say "running" and then nothing —
+        # the user had no way to tell a working station from a hung one.
+        self.on_progress: Optional[Any] = None
         self.store = store or WorldStore(db_path)
         self.ranker = ranker or StoryRanker()
         self.fetcher = Fetcher(transport=AiohttpTransport())
@@ -164,6 +169,7 @@ class AutonomousBroadcaster:
                         ) -> BroadcastCycle:
         """One full cycle: ingest -> compile -> cluster -> rank -> broadcast."""
         cycle = BroadcastCycle()
+        self._progress("starting", "picking a source to watch")
         source = await self._pick_source(source_id)
         if source is None:
             cycle.silent_reason = "no source available"
@@ -171,6 +177,7 @@ class AutonomousBroadcaster:
             return cycle
 
         # 1. Ingest (live HTTP, through the SSRF/size policy).
+        self._progress("ingesting", f"reading {source.name}")
         report = await self.ingestion.ingest_source(source)
         counts = report.counts()
         cycle.articles_ingested = counts.get("captured", 0) + counts.get(
@@ -179,6 +186,9 @@ class AutonomousBroadcaster:
             cycle.silent_reason = f"ingestion failed: {report.error}"
             self.cycles.append(cycle)
             return cycle
+        self._progress(
+            "ingested",
+            f"{cycle.articles_ingested} new article(s) from {source.name}")
 
         # 2. Compile articles that have not been compiled yet into
         # claims/evidence. Selecting by "last N ingested" left a backlog of
@@ -187,12 +197,21 @@ class AutonomousBroadcaster:
         # backlog, bounded per cycle so one cycle cannot run unbounded.
         new_articles = await self._uncompiled_articles(source.id)
         claims_compiled = 0
-        for article in new_articles[:_MAX_COMPILE_PER_CYCLE]:
+        batch = new_articles[:_MAX_COMPILE_PER_CYCLE]
+        total = len(batch)
+        for index, article in enumerate(batch, start=1):
+            # Compilation is the slow phase (one LLM pass per article). Report
+            # each one so a long cycle shows visible movement.
+            self._progress(
+                "compiling",
+                f"extracting claims {index}/{total}",
+                current=index, total=total)
             result = await self.compiler.compile(article)
             claims_compiled += len(getattr(result.claims, "claims", []))
         cycle.claims_compiled = claims_compiled
 
         # 3. Cluster claims into stories.
+        self._progress("clustering", "grouping claims into stories")
         candidates = self.story_engine.cluster(
             await self._claim_records())
         cycle.stories_ranked = len(candidates)
@@ -215,6 +234,7 @@ class AutonomousBroadcaster:
         # the top one. Empty facts make every story score equally, so the
         # ranker would pick arbitrarily — the signal below is what makes the
         # choice meaningful.
+        self._progress("ranking", f"weighing {len(candidates)} stories")
         facts = [await self._story_facts(c) for c in candidates]
         from ..world_model.ranking import rank_stories
         ranked = rank_stories(self.ranker, facts)
@@ -235,6 +255,7 @@ class AutonomousBroadcaster:
             return cycle
 
         # 6. Broadcast it through the live runtime.
+        self._progress("composing", f"writing: {cycle.chosen_story_title[:70]}")
         line = await self.runtime._produce_segment(topic)
         cycle.segment = line
         if line is None:
@@ -250,15 +271,34 @@ class AutonomousBroadcaster:
         self.cycles.append(cycle)
         return cycle
 
+    def _progress(self, phase: str, detail: str = "",
+                  current: int = 0, total: int = 0) -> None:
+        """Report cycle progress. Never raises: progress is diagnostics.
+
+        A failure to report must never abort the broadcast it is describing.
+        """
+        if self.on_progress is None:
+            return
+        try:
+            self.on_progress({"phase": phase, "detail": detail,
+                              "current": current, "total": total})
+        except Exception:                        # noqa: BLE001
+            pass
+
     async def run_forever(self, source_id: Optional[str] = None,
                           poll_seconds: float = 120.0,
                           on_cycle: Optional[Any] = None,
+                          on_wait: Optional[Any] = None,
                           max_cycles: int = 0) -> None:
         """The continuous station: watch, decide, air, repeat.
 
         Sleeps between cycles and stays silent when the feed has nothing fresh
         (§27.4) rather than re-airing old stories. `max_cycles` bounds it for
         testing; 0 runs until `stop()`.
+
+        `on_wait` is called (and awaited, if it returns a coroutine) during the
+        sleep between cycles — the window in which a TTS model that was still
+        loading at startup can come up and be adopted.
         """
         import asyncio
         self._stop = False
@@ -272,7 +312,27 @@ class AutonomousBroadcaster:
                 break
             if self._stop:
                 break
-            await asyncio.sleep(poll_seconds)
+            # Between cycles the station sleeps. Without a tick here the UI
+            # showed nothing for minutes at a time, so a healthy station and a
+            # hung one looked identical. Count down so the listener can see the
+            # next cycle approaching.
+            remaining = float(poll_seconds)
+            while remaining > 0 and not self._stop:
+                step = min(5.0, remaining)
+                self._progress("waiting", "next cycle",
+                               current=int(remaining), total=int(poll_seconds))
+                # The wait is also when a still-loading TTS model can come up
+                # and be adopted, so the station upgrades to the cloned voice
+                # without needing a restart.
+                if on_wait is not None:
+                    try:
+                        result = on_wait()
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:            # noqa: BLE001
+                        pass
+                await asyncio.sleep(step)
+                remaining -= step
 
     def stop(self) -> None:
         self._stop = True
