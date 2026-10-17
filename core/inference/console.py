@@ -42,7 +42,28 @@ from ..inference.runtime import LiveRuntime, RuntimeConfig, TranscriptLine
 
 _HERE = Path(__file__).resolve().parent
 _STATIC = _HERE / "console_static"
-_SEGMENTS_DIR = _HERE.parent.parent / "data" / "segments"
+
+
+def _data_dir() -> Path:
+    """Where the console keeps its store and aired audio.
+
+    A frozen one-file build extracts to an ephemeral temp dir (``_MEI...``)
+    that is deleted when the app quits, so resolving this from ``__file__``
+    would put the database and every segment in a throwaway path — the station
+    would appear to air nothing, and restart with no memory. Source runs keep
+    using the project's data/ directory.
+
+    Must agree with core.desktop._project_root(), which owns the same decision
+    for the app as a whole.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path.home() / ".mindbroadcast"
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    return _HERE.parent.parent
+
+
+_SEGMENTS_DIR = _data_dir() / "data" / "segments"
 
 # The asyncio event-loop gotcha: capture the REAL running loop on first SSE
 # connection; broadcast into the subscriber queues with call_soon_threadsafe.
@@ -186,7 +207,9 @@ class ConsoleState:
         if env:
             candidates.append(Path(env))
         candidates.append(Path.cwd() / "mindbroadcast.yaml")
+        # The app's own data dir: where a frozen .app can actually keep it.
         candidates.append(_SEGMENTS_DIR.parent / "mindbroadcast.yaml")
+        candidates.append(_data_dir() / "mindbroadcast.yaml")
         for path in candidates:
             try:
                 if path.is_file():

@@ -43,6 +43,9 @@ def _project_root() -> Path:
     Frozen one-file builds extract to a temp dir, so ``__file__`` cannot locate
     the user's data. There the writable location is the user's home — a .app
     inside a read-only DMG cannot write next to itself anyway.
+
+    core.inference.console._data_dir() makes the same decision for the console;
+    both must agree or the window and its server would use different stores.
     """
     if getattr(sys, "frozen", False):
         base = Path.home() / ".mindbroadcast"

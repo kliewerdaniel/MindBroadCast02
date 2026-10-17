@@ -224,3 +224,47 @@ def test_healthy_database_is_not_quarantined(tmp_path):
     assert row is not None, "a healthy database lost its data on reopen"
     reopened.close()
     assert not list(tmp_path.glob("world.db.corrupt-*"))
+
+
+def test_frozen_build_does_not_write_to_the_extraction_dir(monkeypatch):
+    """A frozen app must keep its store outside PyInstaller's temp dir.
+
+    PyInstaller extracts a one-file build to an ephemeral `_MEI...` directory
+    that is deleted on quit. Resolving the data dir from __file__ put the
+    database and every aired segment there: the station appeared to air
+    nothing, and restarted with no memory. It must use ~/.mindbroadcast, and
+    agree with core.desktop's own resolver.
+    """
+    import importlib
+    import sys
+    from pathlib import Path
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    try:
+        import core.inference.console as console_mod
+        importlib.reload(console_mod)
+        expected = Path.home() / ".mindbroadcast"
+        assert console_mod._data_dir() == expected
+        # The store and segments live under it, not under a temp path.
+        assert str(console_mod._SEGMENTS_DIR).startswith(str(expected))
+        assert "_MEI" not in str(console_mod._SEGMENTS_DIR)
+
+        # And the desktop app must agree, or the window and its server would
+        # use different databases.
+        import core.desktop as desktop_mod
+        importlib.reload(desktop_mod)
+        assert desktop_mod._project_root() == expected
+    finally:
+        # Restore the real modules for every later test.
+        monkeypatch.undo()
+        importlib.reload(sys.modules["core.inference.console"])
+        importlib.reload(sys.modules["core.desktop"])
+
+
+def test_source_run_still_uses_the_project_data_dir():
+    """The fix must not move a source run's data out of the repo."""
+    from core.inference.console import _data_dir
+    from core.desktop import _project_root
+    root = _project_root()
+    assert (root / "core").is_dir(), f"{root} is not the project root"
+    assert _data_dir() == root
