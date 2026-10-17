@@ -15,6 +15,7 @@ from typing import Dict, Optional
 import aiohttp
 
 from .fetcher import FetchError
+from ..tls import default_ssl_context
 
 
 class AiohttpTransport:
@@ -34,7 +35,15 @@ class AiohttpTransport:
         timeout = aiohttp.ClientTimeout(total=read_timeout,
                                         connect=connect_timeout)
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            # Pass the CA context explicitly rather than relying on the
+            # environment being read at the right moment: in a frozen build
+            # the system trust store is absent, and without this every HTTPS
+            # feed fails CERTIFICATE_VERIFY_FAILED and the station airs
+            # nothing.
+            async with aiohttp.ClientSession(
+                    timeout=timeout,
+                    connector=aiohttp.TCPConnector(
+                        ssl=default_ssl_context())) as session:
                 async with session.get(url, headers=headers,
                                        allow_redirects=False) as response:
                     # Resolve the charset BEFORE consuming the body: aiohttp's

@@ -17,6 +17,10 @@ aiohttp>=3.8.0
 lxml>=4.9.0
 beautifulsoup4>=4.12.0        # article-body extraction
 requests>=2.28.0
+# certifi ships the CA bundle. A frozen build has no system trust store, so
+# without this every HTTPS feed fetch fails CERTIFICATE_VERIFY_FAILED and the
+# station ingests nothing. Bundled via --collect-data (see packaging/release.sh).
+certifi>=2023.0.0
 
 # ── knowledge compilation ────────────────────────────────────────────
 spacy==3.8.7

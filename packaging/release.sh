@@ -86,8 +86,39 @@ if [ "$(uname)" = "Darwin" ]; then
             --hidden-import "core.inference.lightweight" \
             --collect-submodules "webview" \
             --collect-submodules "objc" \
+            --collect-data "certifi" \
             packaging/macos/console_wrapper.py
         if [ -f "dist/$EXE" ]; then
+            # Fail closed: a build with no CA bundle cannot verify HTTPS, so
+            # every feed fetch fails and the station airs nothing while still
+            # looking healthy. Refuse to publish such a build.
+            #
+            # The check must read the PyInstaller archive's table of contents,
+            # NOT grep the binary: a one-file build compresses its data, so the
+            # certificate text is not searchable in the file. Grepping produces
+            # a false negative and blocks a perfectly good build.
+            if command -v pyi-archive_viewer > /dev/null 2>&1; then
+                # Capture the TOC, then match it. Do NOT pipe into `grep -q`:
+                # under `set -o pipefail`, grep -q exits at the first match and
+                # SIGPIPEs the viewer, so the pipeline reports failure even
+                # though the match succeeded — a false negative that blocks a
+                # perfectly good build.
+                CA_TOC="$(pyi-archive_viewer -l "dist/$EXE" 2>/dev/null || true)"
+                case "$CA_TOC" in
+                    *certifi/cacert.pem*)
+                        echo "   CA bundle present in binary (certifi/cacert.pem)"
+                        ;;
+                    *)
+                        echo "ERROR: dist/$EXE carries no certifi/cacert.pem." >&2
+                        echo "       HTTPS feeds will fail CERTIFICATE_VERIFY_FAILED" >&2
+                        echo "       and the station will air nothing." >&2
+                        echo "       Check --collect-data certifi and requirements.txt." >&2
+                        exit 1
+                        ;;
+                esac
+            else
+                echo "   (pyi-archive_viewer unavailable; skipped CA bundle check)"
+            fi
             rm -rf "$OUT/$APP"
             mkdir -p "$OUT/$APP/Contents/MacOS" "$OUT/$APP/Contents/Resources"
             cp "dist/$EXE" "$OUT/$APP/Contents/MacOS/$EXE"
@@ -237,6 +268,7 @@ MINGW*|MSYS*|CYGWIN*|Windows_NT)
             --hidden-import "pywebview" \
             --hidden-import "core.config" \
             --hidden-import "core.inference.lightweight" \
+            --collect-data "certifi" \
             packaging/windows/console_wrapper.py
         if [ -f "dist/MindBroadcast-win-$ARCH.exe" ]; then
             cp "dist/MindBroadcast-win-$ARCH.exe" "$OUT/MindBroadcast-$VER-win-$ARCH.exe"
