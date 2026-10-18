@@ -143,7 +143,8 @@ jobs:
           [ -s "$DEB" ] || { echo "::error::.deb is empty"; exit 1; }
           dpkg-deb -I "$DEB" | head -20
           # Verify the .deb contains the core package
-          dpkg-deb -c "$DEB" | grep -q "core/" || {
+          dpkg-deb -c "$DEB" > /tmp/deb_contents.txt
+          grep -q "core/" /tmp/deb_contents.txt || {
             echo "::error::.deb does not contain core/"; exit 1; }
           echo "OK: .deb smoke test passed"
 
