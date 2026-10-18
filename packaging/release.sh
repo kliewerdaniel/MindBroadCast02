@@ -85,8 +85,44 @@ if [ "$(uname)" = "Darwin" ]; then
             --hidden-import "uvicorn.lifespan.on" \
             --hidden-import "core.config" \
             --hidden-import "core.inference.lightweight" \
+            --hidden-import "fastapi" \
+            --hidden-import "fastapi.responses" \
+            --hidden-import "fastapi.middleware" \
+            --hidden-import "fastapi.staticfiles" \
+            --hidden-import "starlette" \
+            --hidden-import "starlette.responses" \
+            --hidden-import "starlette.middleware" \
+            --hidden-import "starlette.routing" \
+            --hidden-import "pydantic" \
+            --hidden-import "pydantic_core" \
+            --hidden-import "aiohttp" \
+            --hidden-import "feedparser" \
+            --hidden-import "bs4" \
+            --hidden-import "lxml" \
+            --hidden-import "lxml.etree" \
+            --hidden-import "yaml" \
+            --hidden-import "numpy" \
+            --hidden-import "ollama" \
+            --hidden-import "openai" \
+            --hidden-import "soundfile" \
+            --hidden-import "spacy" \
+            --hidden-import "en_core_web_sm" \
             --collect-submodules "webview" \
             --collect-submodules "objc" \
+            --collect-submodules "fastapi" \
+            --collect-submodules "starlette" \
+            --collect-submodules "pydantic" \
+            --collect-submodules "aiohttp" \
+            --collect-submodules "feedparser" \
+            --collect-submodules "bs4" \
+            --collect-submodules "lxml" \
+            --collect-submodules "yaml" \
+            --collect-submodules "numpy" \
+            --collect-submodules "ollama" \
+            --collect-submodules "openai" \
+            --collect-submodules "soundfile" \
+            --collect-submodules "spacy" \
+            --collect-submodules "en_core_web_sm" \
             --collect-data "certifi" \
             --collect-all "en_core_web_sm" \
             packaging/macos/console_wrapper.py

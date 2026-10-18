@@ -19,6 +19,7 @@ The window is the product; the server is an implementation detail behind it.
 
 import os
 import sys
+import traceback
 
 # Local-only, fail-closed. Never let a misconfiguration become a covert cloud
 # call. This guard matches the rule already in every provider.
@@ -33,8 +34,24 @@ if not getattr(sys, "frozen", False):
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
 
-from core.desktop import main
 
+def _log_error() -> None:
+    """Write the traceback to ~/.mindbroadcast/data/launch-error.log."""
+    _log = os.path.join(os.path.expanduser("~"), ".mindbroadcast", "data")
+    os.makedirs(_log, exist_ok=True)
+    with open(os.path.join(_log, "launch-error.log"), "w") as f:
+        f.write(traceback.format_exc())
+
+
+try:
+    from core.desktop import main
+except Exception:
+    _log_error()
+    raise
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        _log_error()
+        raise
