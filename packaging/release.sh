@@ -88,6 +88,7 @@ if [ "$(uname)" = "Darwin" ]; then
             --collect-submodules "webview" \
             --collect-submodules "objc" \
             --collect-data "certifi" \
+            --collect-all "en_core_web_sm" \
             packaging/macos/console_wrapper.py
         if [ -f "dist/$EXE" ]; then
             # Fail closed: a build with no CA bundle cannot verify HTTPS, so

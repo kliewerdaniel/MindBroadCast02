@@ -112,7 +112,8 @@ class EntityExtractor:
         if self.nlp is self._UNAVAILABLE:
             result.warnings.append(
                 f"spaCy model {self.model_name!r} unavailable; "
-                "no entities extracted")
+                "no entities extracted. Install it with: "
+                'pip install "en-core-web-sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"')
             return result
 
         nlp = self.nlp

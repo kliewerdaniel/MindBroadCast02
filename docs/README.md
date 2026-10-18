@@ -60,6 +60,6 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 - `MISSING` — not built.
 - `DEFERRED` — intentionally out of scope for early phases.
 
-**Current status: Phases 0–8 complete — ALL GATES MET, 903 tests passing**
+**Current status: Phases 0–8 complete — ALL GATES MET, 1032 tests passing**
 The §25 roadmap is complete. Baseline was 49 pass / 27 fail.
 (baseline was 49 pass / 27 fail). See ACCEPTANCE_CRITERIA.md §"Gates 4 and 5 evidence".

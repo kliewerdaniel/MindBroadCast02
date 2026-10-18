@@ -61,9 +61,10 @@ def test_importing_core_installs_the_bundle(monkeypatch):
     assert out.stdout.strip(), "import core did not set SSL_CERT_FILE"
 
 
+@pytest.mark.network
 @pytest.mark.skipif(
-    os.environ.get("MINDBROADCAST_SKIP_NETWORK_TESTS") == "1",
-    reason="network tests disabled",
+    os.environ.get("MINDBROADCAST_RUN_NETWORK_TESTS") != "1",
+    reason="network tests are opt-in; set MINDBROADCAST_RUN_NETWORK_TESTS=1 to run",
 )
 def test_real_https_fetch_verifies_certificates():
     """The transport must complete a real TLS handshake against a real host.

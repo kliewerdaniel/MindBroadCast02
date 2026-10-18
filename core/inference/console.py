@@ -334,7 +334,16 @@ app = FastAPI(title="MindBroadcast Console")
 @app.get("/api/health")
 async def health() -> Dict[str, Any]:
     status = await state.health()
+    # Report entity extraction availability so a missing spaCy model is
+    # visible rather than silently degrading the compiler.
+    try:
+        from ..compiler.entities import EntityExtractor
+        extractor = EntityExtractor()
+        entities_available = extractor.nlp is not extractor._UNAVAILABLE
+    except Exception:
+        entities_available = False
     return {"ok": all(status.values()), "services": status,
+            "entities": "available" if entities_available else "unavailable",
             "voice": state.voice_report()}
 
 

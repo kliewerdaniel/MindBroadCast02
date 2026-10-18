@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <img alt="tests" src="https://img.shields.io/badge/tests-959%20passed-brightgreen">
+  <img alt="CI" src="https://github.com/kliewerdaniel/MindBroadCast02/actions/workflows/ci.yml/badge.svg">
   <img alt="phases" src="https://img.shields.io/badge/phases-0%E2%80%938%20complete-blue">
   <img alt="gates" src="https://img.shields.io/badge/gates-1%E2%80%9310%20MET-blue">
-  <img alt="python" src="https://img.shields.io/badge/python-3.9%2B-blue">
+  <img alt="python" src="https://img.shields.io/badge/python-3.13-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
@@ -74,15 +74,15 @@ The system runs itself. Start it, and it watches, decides, speaks, and moves on
 
 ---
 
-## Quick start — the macOS app (no code)
+## Quick start — the macOS app
 
 The easiest way to run MindBroadcast is as a native application. Download the
 released bundle, open it once, and the station runs.
 
 ```bash
 # 1. Pull the bundle
-git clone https://github.com/your-org/MindBroadcast.git
-cd MindBroadcast
+git clone https://github.com/kliewerdaniel/MindBroadCast02.git
+cd MindBroadCast02
 
 # 2. Create a virtualenv and install the single installable stack
 python3 -m venv .venv && source .venv/bin/activate
@@ -98,7 +98,7 @@ python3 -m uvicorn core.inference.console:app --host 127.0.0.1 --port 7862
 
 # Desktop app (macOS). Runs the console in a native window and starts the TTS
 # server if it is not already running:
-open ./packaging/macos/MindBroadcast.app
+open ./build/MindBroadcast.app
 ```
 
 The bundle is built from the project's own virtualenv with
@@ -135,11 +135,6 @@ for you beyond the two servers this app owns.
 
 ---
 
-## What this is
-
-MindBroadcast is not a podcast generator that renders a fixed script. It is a
-continuously running information system.
-
 ### 1. Install
 
 The app is built from a single virtualenv:
@@ -147,7 +142,7 @@ The app is built from a single virtualenv:
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python3 -m pytest -q          # 959 passing
+python3 -m pytest -q          # 1033 passing
 ```
 
 ### 2. Local inference
@@ -332,7 +327,7 @@ consistent cloned voice.
 
 ## Tests
 
-**959 passing, 0 failing.**
+**1033 passing, 0 failing.**
 
 ```bash
 python3 -m pytest -q
@@ -349,14 +344,19 @@ python3 -m pytest -q
 | `test_compiler.py` | 71 | 8 passes, CKU identity, integration |
 | `test_models.py` | 55 | Domain model, enums, status mapping |
 | `test_world_model.py` | 54 | Ranking, coverage, clustering, replay |
+| `test_config.py` | 22 | ModelContext, provider selection, settings |
 | `test_migrations.py` | 34 | Versioned up/down, ledger |
 | `test_epistemic.py` | 32 | The invariants |
+| `test_voice_and_progress.py` | 16 | Voice registry, progress events |
+| `test_world_registry.py` | 16 | World source registry |
 | `test_recovery.py` | 24 | Startup recovery, mode transitions |
 | `test_snapshot.py` | 18 | Snapshot service |
 | `test_editor.py` | 15 | Grounding floor, editorial composition |
+| `test_feeds_and_settings.py` | 13 | Feed management, settings panel |
 | `test_voices.py` | 14 | Voice consistency, delivery variety |
 | `test_llm_analysis.py` | 14 | Persona analysis, §12.3 floor |
 | `test_world_sources.py` | 11 | Registry coverage, idempotent registration |
+| `test_tls.py` | 7 | CA bundle, HTTPS verification |
 
 ---
 

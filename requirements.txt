@@ -24,6 +24,11 @@ certifi>=2023.0.0
 
 # ── knowledge compilation ────────────────────────────────────────────
 spacy==3.8.7
+# The en_core_web_sm model is installed as a pip wheel (not via `spacy download`,
+# which writes to a global cache a fresh venv cannot see). The wheel URL is pinned
+# to the exact version compatible with spacy 3.8.7. Install it after
+# `pip install -r requirements.txt`:
+#   pip install "en-core-web-sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 pyyaml>=6.0
 
 # ── inference clients ────────────────────────────────────────────────
