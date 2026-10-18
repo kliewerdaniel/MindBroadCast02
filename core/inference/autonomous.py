@@ -139,6 +139,16 @@ class AutonomousBroadcaster:
             # in-memory rather than crashing the broadcast
 
     async def register_source(self, name: str, endpoint: str) -> str:
+        # Validate the endpoint against the SSRF policy before registering.
+        # Without this, a user (or an attacker who can reach the console) could
+        # register a URL that resolves to an internal address, and the station
+        # would fetch from it during the next cycle.
+        from ..ingestion.security import validate_url, SecurityViolation
+        try:
+            validate_url(endpoint)
+        except SecurityViolation:
+            raise ValueError(
+                f"endpoint rejected by fetch policy: {endpoint}")
         # Idempotent on endpoint: re-registering a feed returns the existing
         # source rather than creating a duplicate. The endpoint is the stable
         # identity; the display name is cosmetic.

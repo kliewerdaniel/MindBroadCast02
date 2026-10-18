@@ -771,6 +771,12 @@ async def add_feed(body: FeedCreate,
         raise HTTPException(400, "endpoint is required")
     if not endpoint.lower().startswith(("http://", "https://")):
         raise HTTPException(400, "endpoint must be an http(s) URL")
+    # Validate against the SSRF policy before registering.
+    from ..ingestion.security import validate_url, SecurityViolation
+    try:
+        validate_url(endpoint)
+    except SecurityViolation as e:
+        raise HTTPException(400, f"endpoint rejected by fetch policy: {e}")
 
     existing = await state.autonomous.store.find_source_by_endpoint(endpoint)
     if existing is not None:
@@ -795,6 +801,12 @@ async def edit_feed(source_id: str, body: FeedEdit,
         endpoint = body.endpoint.strip()
         if not endpoint.lower().startswith(("http://", "https://")):
             raise HTTPException(400, "endpoint must be an http(s) URL")
+        # Validate against the SSRF policy before accepting the edit.
+        from ..ingestion.security import validate_url, SecurityViolation
+        try:
+            validate_url(endpoint)
+        except SecurityViolation as e:
+            raise HTTPException(400, f"endpoint rejected by fetch policy: {e}")
         source.endpoint = endpoint
     if body.enabled is not None:
         source.enabled = body.enabled
