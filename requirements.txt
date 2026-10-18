@@ -20,7 +20,7 @@ requests>=2.28.0
 # certifi ships the CA bundle. A frozen build has no system trust store, so
 # without this every HTTPS feed fetch fails CERTIFICATE_VERIFY_FAILED and the
 # station ingests nothing. Bundled via --collect-data (see packaging/release.sh).
-certifi>=2023.0.0
+certifi>=2026.7.22
 
 # ── knowledge compilation ────────────────────────────────────────────
 spacy==3.8.7
