@@ -90,14 +90,18 @@ main()
 
 def _detect_interpreter() -> Optional[str]:
     """Find a python with a working mlx_audio qwen3_tts module."""
+    import shutil
     candidates = [DEFAULT_TTS_PYTHON] if DEFAULT_TTS_PYTHON else []
-    candidates += [
-        "/opt/homebrew/bin/python3.14",
-        "/opt/homebrew/bin/python3.13",
-        "/opt/homebrew/bin/python3.12",
-        "/opt/homebrew/bin/python3.11",
-        sys.executable,
-    ]
+    # Prefer shutil.which over hardcoded paths — works on any platform.
+    for cmd in ("python3.14", "python3.13", "python3.12", "python3.11"):
+        path = shutil.which(cmd)
+        if path:
+            candidates.append(path)
+    # Also check common Homebrew locations as a fallback.
+    for ver in ("3.14", "3.13", "3.12", "3.11"):
+        candidates.append(f"/opt/homebrew/bin/python{ver}")
+        candidates.append(f"/usr/local/bin/python{ver}")
+    candidates.append(sys.executable)
     for candidate in candidates:
         if not candidate or not os.path.exists(candidate):
             continue

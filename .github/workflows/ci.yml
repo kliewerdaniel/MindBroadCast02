@@ -1,4 +1,4 @@
-name: Brief Setup
+name: CI
 
 on:
   push:
@@ -11,22 +11,29 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@03d7a60201c546734a722035437f89f3a3386eea  # v5
         with:
           python-version: "3.13"
 
       - name: Install stack
         uses: ./.github/actions/install-stack
 
-      - name: Lint (compile)
+      - name: Lint
         run: |
           . .venv/bin/activate
-          python -m py_compile $(git ls-files '*.py') || true
+          pip install --quiet ruff
+          ruff check core/ tests/
 
       - name: Test
         run: |
           . .venv/bin/activate
           python -m pytest tests/ -q
+
+      - name: pip-audit
+        run: |
+          . .venv/bin/activate
+          pip install --quiet pip-audit
+          pip-audit --desc

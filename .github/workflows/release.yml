@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Zero-dependency check job: GitHub rejects a workflow whose every job
+  # has `needs`, so this always runs and keeps the file valid.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Install Python
+        uses: actions/setup-python@03d7a60201c546734a722035437f89f3a3386eea  # v5
+        with:
+          python-version: "3.13"
+
+      - name: Install stack
+        uses: ./.github/actions/install-stack
+
+      - name: Test
+        run: |
+          . .venv/bin/activate
+          python -m pytest tests/ -q
+
+  # ── macOS .dmg ───────────────────────────────────────────────────────
+  macos:
+    runs-on: macos-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Install Python
+        uses: actions/setup-python@03d7a60201c546734a722035437f89f3a3386eea  # v5
+        with:
+          python-version: "3.13"
+
+      - name: Install PyInstaller
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet -r requirements.txt pyinstaller
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Build .dmg
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          chmod +x packaging/release.sh
+          ./packaging/release.sh "${VERSION#v}" "$GITHUB_WORKSPACE/dist"
+          ls -la "$GITHUB_WORKSPACE/dist"
+
+      - name: Smoke-test the .app bundle
+        run: |
+          set -euo pipefail
+          DMG=$(ls "$GITHUB_WORKSPACE"/dist/*.dmg | head -1)
+          MP=$(hdiutil attach "$DMG" -nobrowse -readonly | grep Volumes | awk '{print $3}')
+          APP=$(find "$MP" -maxdepth 1 -name "*.app" | head -1)
+          DECLARED=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
+          if [ ! -x "$APP/Contents/MacOS/$DECLARED" ]; then
+            echo "::error::Info.plist declares '$DECLARED' but Contents/MacOS holds: $(ls "$APP/Contents/MacOS/")"
+            hdiutil detach "$MP" >/dev/null || true
+            exit 1
+          fi
+          open "$APP"
+          WINDOWED=0
+          for i in $(seq 1 40); do
+            if python3 packaging/macos/check_window.py; then
+              echo "window on screen after ${i} attempt(s)"; WINDOWED=1; break
+            fi
+            sleep 2
+          done
+          if [ "$WINDOWED" != "1" ]; then
+            echo "::error::the .app process started but no window appeared"
+            pkill -f "MindBroadcast.app/Contents/MacOS" || true
+            hdiutil detach "$MP" >/dev/null || true
+            exit 1
+          fi
+          UP=0
+          for i in $(seq 1 30); do
+            if curl -sf --max-time 3 http://127.0.0.1:7862/api/health >/dev/null; then
+              echo "console responded after ${i} attempt(s)"; UP=1; break
+            fi
+            sleep 2
+          done
+          if [ "$UP" != "1" ]; then
+            echo "::error::window appeared but the console never became reachable"
+            pkill -f "MindBroadcast.app/Contents/MacOS" || true
+            hdiutil detach "$MP" >/dev/null || true
+            exit 1
+          fi
+          pkill -f "MindBroadcast.app/Contents/MacOS" || true
+          hdiutil detach "$MP" >/dev/null || true
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b288633304920ea  # v4
+        with:
+          name: mindbroadcast-macos-dmg
+          path: "${{ github.workspace }}/dist/*.dmg"
+          if-no-files-found: error
+
+  # ── Linux .deb ────────────────────────────────────────────────────────
+  linux:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Install fpm + deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq ruby-dev build-essential dpkg
+          gem install --no-document fpm
+
+      - name: Build .deb
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          DEST="$GITHUB_WORKSPACE/dist"
+          mkdir -p "$DEST"
+          chmod +x packaging/release.sh
+          ./packaging/release.sh "${VERSION#v}" "$DEST" > "$GITHUB_WORKSPACE/_release.log" 2>&1
+          cat "$GITHUB_WORKSPACE/_release.log"
+          ls -la "$DEST"
+          ls "$DEST"/*.deb > /dev/null || { echo "::error::no .deb produced"; exit 1; }
+
+      - name: Smoke-test the .deb
+        run: |
+          set -euo pipefail
+          dpkg-deb -I "$GITHUB_WORKSPACE"/dist/*.deb | head -20
+          # Verify the .deb contains the core package
+          dpkg-deb -c "$GITHUB_WORKSPACE"/dist/*.deb | grep -q "core/" || {
+            echo "::error::.deb does not contain core/"; exit 1; }
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b288633304920ea  # v4
+        with:
+          name: mindbroadcast-linux-deb
+          path: "${{ github.workspace }}/dist/*.deb"
+          if-no-files-found: error
+
+  # ── Windows .exe ──────────────────────────────────────────────────────
+  windows:
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Install Python
+        uses: actions/setup-python@03d7a60201c546734a722035437f89f3a3386eea  # v5
+        with:
+          python-version: "3.13"
+
+      - name: Install PyInstaller + runtime deps
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\activate
+          python -m pip install --quiet --upgrade pip
+          pip install --quiet -r requirements.txt pyinstaller
+          echo "$env:GITHUB_WORKSPACE\.venv\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Windows .exe
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          chmod +x packaging/release.sh
+          ./packaging/release.sh "${VERSION#v}" "$GITHUB_WORKSPACE/dist" > "$GITHUB_WORKSPACE/_release.log" 2>&1
+          cat "$GITHUB_WORKSPACE/_release.log"
+          ls -la "$GITHUB_WORKSPACE/dist"
+
+      - name: Smoke-test the .exe
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Verify the .exe exists and is a valid PE binary
+          EXE=$(ls "$GITHUB_WORKSPACE"/dist/MindBroadcast-*-win-*.exe | head -1)
+          file "$EXE" | grep -q "PE32" || {
+            echo "::error::not a valid PE binary"; exit 1; }
+          echo "PE binary verified: $EXE"
+
+      - name: Upload .exe
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b288633304920ea  # v4
+        with:
+          name: mindbroadcast-windows-exe
+          path: "${{ github.workspace }}/dist/MindBroadcast-*-win-*.exe"
+          if-no-files-found: error
+
+  # ── Publish to GitHub Release ─────────────────────────────────────────
+  publish:
+    runs-on: ubuntu-latest
+    needs: [macos, linux, windows]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005977137dc0d89eb  # v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844  # v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

@@ -387,16 +387,12 @@ python3 -m pytest -q
 GitHub Actions builds the cross-OS release on each OS's own runner and attaches
 the artifacts to the GitHub Release when a version tag is pushed.
 
-* `.github/workflows/ci.yml` — base quality gate (check + tests), runs on every
-  push/PR. The `check` job is zero-dependency, which keeps the workflow valid
-  (GitHub rejects workflows where every job has `needs`). The `deb` and
-  `windows-exe` jobs are tag-gated and build on their host OS (PyInstaller
-  cannot cross-compile).
-* `.github/workflows/build-linux.yml` — `ubuntu-latest` (Debian container),
-  builds the **Linux `.deb`** with `fpm`.
-* `.github/workflows/build-os.yml` — Windows builds the **Windows `.exe`** with
-  PyInstaller on `windows-latest`; macOS's `.dmg` is built on `macos-latest`
-  runners in the same workflow set.
+* `.github/workflows/ci.yml` — quality gate (lint + tests + pip-audit),
+  runs on every push/PR.
+* `.github/workflows/release.yml` — tag-triggered release. Builds all three
+  OS artifacts (macOS `.dmg`, Linux `.deb`, Windows `.exe`) on their
+  respective hosts, smoke-tests each, and publishes to a single GitHub
+  Release.
 
 Model weights and the Qwen3-TTS server are **not** bundled into the artifacts.
 The first user runs `brief-setup.py`, which auto-detects this machine's LLM +
