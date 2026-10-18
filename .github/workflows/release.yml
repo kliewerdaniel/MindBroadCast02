@@ -116,8 +116,8 @@ jobs:
 
       - name: Install fpm + deps
         run: |
-          apt-get update -qq
-          apt-get install -y -qq ruby-dev build-essential dpkg
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ruby-dev build-essential dpkg
           gem install --no-document fpm
 
       - name: Build .deb
