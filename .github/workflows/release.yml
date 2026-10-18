@@ -137,10 +137,15 @@ jobs:
       - name: Smoke-test the .deb
         run: |
           set -euo pipefail
-          dpkg-deb -I "$GITHUB_WORKSPACE"/dist/*.deb | head -20
+          DEB=$(ls "$GITHUB_WORKSPACE"/dist/*.deb)
+          echo "Checking $DEB"
+          ls -la "$DEB"
+          [ -s "$DEB" ] || { echo "::error::.deb is empty"; exit 1; }
+          dpkg-deb -I "$DEB" | head -20
           # Verify the .deb contains the core package
-          dpkg-deb -c "$GITHUB_WORKSPACE"/dist/*.deb | grep -q "core/" || {
+          dpkg-deb -c "$DEB" | grep -q "core/" || {
             echo "::error::.deb does not contain core/"; exit 1; }
+          echo "OK: .deb smoke test passed"
 
       - name: Upload .deb
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v4
