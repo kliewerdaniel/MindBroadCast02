@@ -56,7 +56,7 @@ def _refuse_non_local(base_url: str) -> None:
     if os.environ.get("SOVEREIGN_ALLOW_EXTERNAL_INFERENCE") == "1":
         return
     host = re.sub(r"^https?://", "", base_url).split("/")[0].split(":")[0]
-    if host not in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+    if host not in ("localhost", "127.0.0.1", "::1"):
         raise PermissionError(
             f"refusing non-local inference endpoint {base_url!r}; set "
             f"SOVEREIGN_ALLOW_EXTERNAL_INFERENCE=1 to override")
