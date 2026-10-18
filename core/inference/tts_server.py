@@ -111,8 +111,9 @@ def main(argv=None):
 
     _refuse_non_local(args.host)
     app = build_app(args.model)
-    print(f"Qwen3-TTS server on http://{args.host}:{args.port} "
-          f"model={args.model}", flush=True)
+    import logging; logging.getLogger(__name__).info(
+        f"Qwen3-TTS server on http://{args.host}:{args.port} "
+        f"model={args.model}")
     app.run(host=args.host, port=args.port, threaded=False)
 
 

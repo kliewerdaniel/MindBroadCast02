@@ -187,7 +187,9 @@ class LLMAnalysisFactory:
             return ""
         try:
             data = post("/api/generate", payload)
-        except Exception:
+        except Exception as exc:
+            import logging; logging.getLogger(__name__).warning(
+                "LLM analysis request failed: %s", exc)
             return ""
         return (data.get("response", "")
                 or (data.get("thinking", "")

@@ -548,8 +548,9 @@ class Database:
                 if quarantine is None:
                     raise sqlite3.DatabaseError(
                         "database is corrupt and could not be moved aside")
-                print(f"[persistence] database was corrupt; moved to "
-                      f"{quarantine} and starting fresh", file=sys.stderr)
+                import logging; logging.getLogger(__name__).warning(
+                    "[persistence] database was corrupt; moved to %s and starting fresh",
+                    quarantine)
                 conn = self.connect()
             try:
                 conn.executescript(CREATE_TABLES_SQL)
@@ -557,8 +558,9 @@ class Database:
                 quarantine = self._quarantine_and_recreate()
                 if quarantine is None:
                     raise
-                print(f"[persistence] database was unreadable ({error}); "
-                      f"moved to {quarantine} and starting fresh", file=sys.stderr)
+                import logging; logging.getLogger(__name__).warning(
+                    "[persistence] database was unreadable (%s); "
+                    "moved to %s and starting fresh", error, quarantine)
                 conn = self.connect()
                 conn.executescript(CREATE_TABLES_SQL)
             row = conn.execute(

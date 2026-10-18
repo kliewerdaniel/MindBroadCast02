@@ -79,7 +79,7 @@ def main():
     audio = parts[0] if len(parts) == 1 else np.concatenate(parts)
     out = payload["out"]
     sf.write(out, audio, sr)
-    print(json.dumps({
+    import logging; logging.getLogger(__name__).info(json.dumps({
         "ok": True, "path": out, "sample_rate": int(sr),
         "duration_ms": int(len(audio) / sr * 1000),
     }))

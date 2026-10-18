@@ -241,7 +241,9 @@ class IngestionPipeline:
         body_text = None
         try:
             body_text = await enrich_with_body(self.fetcher, entry.link)
-        except Exception:
+        except Exception as exc:
+            import logging; logging.getLogger(__name__).warning(
+                "body enrichment failed for %s: %s", entry.link, exc)
             body_text = None
         normalized = body_text or entry.content or entry.summary
 

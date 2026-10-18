@@ -410,8 +410,10 @@ async def health() -> Dict[str, Any]:
         entities_available = extractor.nlp is not extractor._UNAVAILABLE
     except Exception:
         entities_available = False
+    from ..logging_config import get_error_counts
     return {"ok": all(status.values()), "services": status,
             "entities": "available" if entities_available else "unavailable",
+            "errors": get_error_counts(),
             "voice": state.voice_report()}
 
 
