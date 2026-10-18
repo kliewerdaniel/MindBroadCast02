@@ -14,9 +14,10 @@ would fail §16.8. Both transports here implement the same interface and neither
 imports the other.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 
 class TransportKind(Enum):
@@ -40,7 +41,7 @@ class StreamEndpoint:
     authentication: str = "required-for-admin"
     backpressure_policy: str = "bounded-buffer-then-disconnect"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "kind": self.kind.value,
             "path": self.path,
@@ -158,7 +159,7 @@ class MetadataTransport:
             framing="server-sent-events",
         )
 
-    def send_event(self, event_dict: dict[str, Any]) -> bool:
+    def send_event(self, event_dict: Dict[str, Any]) -> bool:
         self.events_sent += 1
         return True
 
@@ -170,8 +171,8 @@ class StreamManager:
     the seam.
     """
 
-    def __init__(self, audio_transport: AudioTransport | None = None,
-                 metadata_transport: MetadataTransport | None = None):
+    def __init__(self, audio_transport: Optional[AudioTransport] = None,
+                 metadata_transport: Optional[MetadataTransport] = None):
         self.audio_transport = audio_transport or HttpChunkedTransport()
         self.metadata_transport = metadata_transport or MetadataTransport()
 
@@ -181,7 +182,7 @@ class StreamManager:
     def deliver_chunk(self, chunk: bytes, sequence: int) -> bool:
         return self.audio_transport.write_chunk(chunk, sequence)
 
-    def emit_metadata(self, event: dict[str, Any]) -> bool:
+    def emit_metadata(self, event: Dict[str, Any]) -> bool:
         """Metadata rides its own channel, never the audio stream (§19.4)."""
         return self.metadata_transport.send_event(event)
 

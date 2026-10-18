@@ -8,37 +8,27 @@ evidence is clear, no forced consensus when the issue is unresolved, no silent
 persona-config rewrite, no unbounded memory, and no unexplained position drift.
 """
 
-from datetime import UTC, datetime
-
 import pytest
+from datetime import datetime, timezone, timedelta
 
-from core.personas.analysis import (
-    DisagreementDetector,
-    DisagreementGuard,
-    IndependentAnalysisRunner,
-    SharedEvidencePacket,
-)
-from core.personas.consistency import (
-    ConsistencyEvaluator,
-    ImitationDetector,
-)
-from core.personas.dialogue import DialogueComposer
-from core.personas.dialogue_orchestrator import DialogueOrchestrator
 from core.personas.entities import (
-    AnalyticalPreferences,
-    ConsistencyDimension,
-    ConsistencyReport,
-    Disagreement,
-    DisagreementType,
-    MemoryType,
-    MemoryValidity,
-    PersonaAnalysis,
-    PersonaConfig,
-    ResolutionStatus,
+    AnalyticalPreferences, ConsistencyDimension, ConsistencyReport,
+    DialogueTurn, Disagreement, DisagreementType, MemoryType, MemoryValidity,
+    PersonaAnalysis, PersonaConfig, PersonaMemoryEntry, ResolutionStatus,
+    StructuredExchange,
 )
 from core.personas.memory import MemoryStore, PersonaRegistry
+from core.personas.analysis import (
+    AnalysisFunction, DisagreementDetector, DisagreementGuard,
+    IndependentAnalysisRunner, SharedEvidencePacket,
+)
+from core.personas.dialogue import DialogueComposer
+from core.personas.consistency import (
+    ConsistencyEvaluator, ImitationDetector,
+)
+from core.personas.dialogue_orchestrator import DialogueOrchestrator
 
-NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
 
 
 def persona(pid="skeptic", name="Skeptic", role="challenges weak evidence",
@@ -579,7 +569,7 @@ class TestPersonaMemory:
     def test_recall_filters_inactive_by_default(self):
         store = MemoryStore()
         entry = store.remember("skeptic", MemoryType.SEMANTIC, "Old view")
-        store.remember("skeptic", MemoryType.CORRECTION, "New view",
+        revised = store.remember("skeptic", MemoryType.CORRECTION, "New view",
                                  revises_entry_id=entry.id)
         active = store.recall("skeptic", MemoryType.SEMANTIC)
         assert entry not in active

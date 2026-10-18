@@ -17,7 +17,9 @@ presented as a finding, which is exactly what invariant I10 forbids.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 from ..models import EvidenceRelationship
 from .claims import ExtractedClaim
@@ -50,14 +52,14 @@ _SCALE = {"million": 1e6, "billion": 1e9, "trillion": 1e12}
 class ContradictionFinding:
     outcome: AnalysisOutcome
     new_claim_index: int
-    existing_claim_id: str | None = None
-    relationship: EvidenceRelationship | None = None
+    existing_claim_id: Optional[str] = None
+    relationship: Optional[EvidenceRelationship] = None
     basis: str = ""
     confidence: float = 0.0
-    new_value: str | None = None
-    existing_value: str | None = None
-    new_temporal: str | None = None
-    existing_temporal: str | None = None
+    new_value: Optional[str] = None
+    existing_value: Optional[str] = None
+    new_temporal: Optional[str] = None
+    existing_temporal: Optional[str] = None
 
     @property
     def is_contradiction(self) -> bool:
@@ -66,17 +68,17 @@ class ContradictionFinding:
 
 @dataclass
 class ContradictionReport:
-    findings: list[ContradictionFinding] = field(default_factory=list)
+    findings: List[ContradictionFinding] = field(default_factory=list)
     pass_name: str = "contradiction_analysis"
     pass_version: str = "1.0.0"
-    warnings: list[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     @property
-    def contradictions(self) -> list[ContradictionFinding]:
+    def contradictions(self) -> List[ContradictionFinding]:
         return [f for f in self.findings if f.is_contradiction]
 
     @property
-    def corroborations(self) -> list[ContradictionFinding]:
+    def corroborations(self) -> List[ContradictionFinding]:
         return [f for f in self.findings
                 if f.outcome is AnalysisOutcome.CORROBORATION]
 
@@ -86,10 +88,10 @@ class ExistingClaimView:
     """The minimum the analysis needs about a stored claim."""
     claim_id: str
     canonical_proposition: str = ""
-    claim_type: str | None = None
-    quantities: list[tuple[str, str | None]] = field(default_factory=list)
-    temporals: list[str] = field(default_factory=list)
-    attributed_to: str | None = None
+    claim_type: Optional[str] = None
+    quantities: List[Tuple[str, Optional[str]]] = field(default_factory=list)
+    temporals: List[str] = field(default_factory=list)
+    attributed_to: Optional[str] = None
     is_causal: bool = False
 
 
@@ -101,8 +103,8 @@ class ContradictionAnalyzer:
 
     def run(
         self,
-        new_claims: list[ExtractedClaim],
-        existing: list[ExistingClaimView],
+        new_claims: List[ExtractedClaim],
+        existing: List[ExistingClaimView],
     ) -> ContradictionReport:
         report = ContradictionReport()
         for index, claim in enumerate(new_claims):
@@ -115,22 +117,23 @@ class ContradictionAnalyzer:
     # ── candidate selection ──────────────────────────────
 
     def _comparable_existing(
-        self, claim: ExtractedClaim, existing: list[ExistingClaimView]
-    ) -> list[ExistingClaimView]:
+        self, claim: ExtractedClaim, existing: List[ExistingClaimView]
+    ) -> List[ExistingClaimView]:
         """Only claims that could bear on the same proposition.
 
         Comparing everything against everything would manufacture
         contradictions between unrelated reporting, which is worse than
         missing one.
         """
-        comparable: list[ExistingClaimView] = []
+        comparable: List[ExistingClaimView] = []
         claim_units = {self._normalize_unit(q.unit) for q in claim.quantities}
         for candidate in existing:
             if not candidate.quantities and claim.quantities:
                 continue
             candidate_units = {
                 self._normalize_unit(u) for _, u in candidate.quantities}
-            if claim_units and candidate_units and not self._units_overlap(claim_units, candidate_units):
+            if claim_units and candidate_units:
+                if not self._units_overlap(claim_units, candidate_units):
                     continue
             if self._shares_subject(claim, candidate):
                 comparable.append(candidate)
@@ -158,7 +161,7 @@ class ContradictionAnalyzer:
             "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
             "of", "for", "with", "by", "from", "that", "this", "said", "says",
             "had", "has", "have", "was", "were", "been", "being", "is", "are",
-            "it", "its", "as", "which", "who", "after", "before",
+            "it", "its", "as", "that", "which", "who", "after", "before",
         }
         return {
             w.lower().strip(".,;:!?\"'") for w in text.split()
@@ -169,7 +172,7 @@ class ContradictionAnalyzer:
 
     def _compare(
         self, claim: ExtractedClaim, candidate: ExistingClaimView, index: int
-    ) -> ContradictionFinding | None:
+    ) -> Optional[ContradictionFinding]:
         new_q = claim.quantities[0] if claim.quantities else None
         old_q = (candidate.quantities[0] if candidate.quantities else None)
         # `new_q` is a Quantity (attribute access); `old_q` is a
@@ -189,7 +192,8 @@ class ContradictionAnalyzer:
         old_unit = self._normalize_unit(old_unit)
 
         # Same unit, same temporal scope, different value -> contradiction.
-        if self._units_overlap({new_unit}, {old_unit}) and new_temporal and old_temporal and new_temporal != old_temporal:
+        if self._units_overlap({new_unit}, {old_unit}):
+            if new_temporal and old_temporal and new_temporal != old_temporal:
                 return ContradictionFinding(
                     outcome=AnalysisOutcome.TEMPORAL_DIFFERENCE,
                     new_claim_index=index,
@@ -207,7 +211,8 @@ class ContradictionAnalyzer:
 
             new_value = self._numeric(new_q.value)
             old_value = self._numeric(old_value)
-            if new_value is not None and old_value is not None and self._same_value(new_value, old_value, new_unit, old_unit):
+            if new_value is not None and old_value is not None:
+                if self._same_value(new_value, old_value, new_unit, old_unit):
                     return ContradictionFinding(
                         outcome=AnalysisOutcome.CORROBORATION,
                         new_claim_index=index,
@@ -235,7 +240,8 @@ class ContradictionAnalyzer:
                 )
 
         # Different units measuring the same kind of thing.
-        if self._units_overlap({new_unit}, {old_unit}) is False and self._same_measure_family(new_unit, old_unit):
+        if self._units_overlap({new_unit}, {old_unit}) is False:
+            if self._same_measure_family(new_unit, old_unit):
                 return ContradictionFinding(
                     outcome=AnalysisOutcome.MEASUREMENT_DIFFERENCE,
                     new_claim_index=index,
@@ -253,8 +259,9 @@ class ContradictionAnalyzer:
 
     def _compare_without_quantities(
         self, claim: ExtractedClaim, candidate: ExistingClaimView, index: int
-    ) -> ContradictionFinding | None:
-        if claim.is_attributed and candidate.attributed_to and claim.attributed_to and candidate.attributed_to:
+    ) -> Optional[ContradictionFinding]:
+        if claim.is_attributed and candidate.attributed_to:
+            if claim.attributed_to and candidate.attributed_to:
                 if (claim.attributed_to.lower()
                         != candidate.attributed_to.lower()):
                     return ContradictionFinding(
@@ -273,7 +280,7 @@ class ContradictionAnalyzer:
     # ── unit and value helpers ───────────────────────────
 
     @staticmethod
-    def _normalize_unit(unit: str | None) -> str:
+    def _normalize_unit(unit: Optional[str]) -> str:
         if not unit:
             return ""
         text = unit.lower().strip()
@@ -306,7 +313,7 @@ class ContradictionAnalyzer:
         return False
 
     @staticmethod
-    def _numeric(value: str) -> float | None:
+    def _numeric(value: str) -> Optional[float]:
         try:
             return float(value.replace(",", ""))
         except (ValueError, AttributeError):
@@ -325,13 +332,13 @@ class ContradictionAnalyzer:
         return False
 
     @staticmethod
-    def _temporal(claim: ExtractedClaim) -> str | None:
+    def _temporal(claim: ExtractedClaim) -> Optional[str]:
         if claim.temporal_qualifiers:
             return claim.temporal_qualifiers[0].phrase.lower()
         return None
 
     @staticmethod
-    def _temporal_of(candidate: ExistingClaimView) -> str | None:
+    def _temporal_of(candidate: ExistingClaimView) -> Optional[str]:
         if candidate.temporals:
             return candidate.temporals[0].lower()
         return None

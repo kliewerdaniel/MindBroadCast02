@@ -6,38 +6,18 @@ core domain records without violating the defined relationships.
 
 import asyncio
 import os
-from datetime import UTC, datetime
-
 import pytest
+from datetime import datetime, timezone
 
 from core.models import (
-    Article,
-    Claim,
-    ClaimFilter,
-    ClaimStatus,
-    ClaimType,
-    Correction,
-    CorrectionType,
-    Entity,
-    EntityStatus,
-    EntityType,
-    Event,
-    EventStatus,
-    Evidence,
-    EvidenceRelationship,
-    OwnershipGroup,
-    Source,
-    SourceType,
-    Story,
-    StoryFilter,
-    StoryStatus,
+    Story, Event, Claim, Evidence, ClaimEvidence, Entity, Source,
+    OwnershipGroup, Article, Correction, WorldSnapshot,
+    SourceType, EntityType, EntityStatus, EventStatus, StoryStatus,
+    ClaimType, ClaimStatus, CorrectionType, EvidenceRelationship,
+    ExtractionStatus, StoryFilter, ClaimFilter,
 )
 from core.persistence import (
-    SCHEMA_VERSION,
-    Database,
-    PersistenceError,
-    WorldStore,
-    content_hash,
+    WorldStore, PersistenceError, Database, SCHEMA_VERSION, content_hash,
 )
 
 
@@ -216,7 +196,7 @@ class TestArticlePersistence:
             title="Climate Summit Begins (corrected)",
             content_hash="c" * 64,
             normalized_text="Corrected: leaders met to discuss climate policy.",
-            published_at=datetime(2026, 1, 2, 8, 0, tzinfo=UTC),
+            published_at=datetime(2026, 1, 2, 8, 0, tzinfo=timezone.utc),
         )
         new_id = run(world_store.supersede_article(original_id, revised))
 
@@ -607,7 +587,6 @@ class TestAppendOnly:
     def test_no_update_or_delete_statements_in_write_paths(self):
         """Static guard: the schema-level write paths never mutate core rows."""
         import inspect
-
         from core import persistence
         source = inspect.getsource(persistence.WorldStore)
         for method in ("add_claim", "add_story", "add_article", "add_correction"):
@@ -760,7 +739,7 @@ class TestDomainEvents:
         run(world_store.add_story(Story(canonical_title="A story")))
 
         conn = world_store.db.connect()
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(Exception):
             conn.execute(statement)
             conn.commit()
 
@@ -772,7 +751,7 @@ class TestDomainEvents:
         run(world_store.add_evidence(Evidence(
             article_id=article_id, source_id=sample_source.id, excerpt="p")))
         conn = world_store.db.connect()
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(Exception):
             conn.execute("UPDATE evidence SET excerpt = 'x'")
             conn.commit()
 

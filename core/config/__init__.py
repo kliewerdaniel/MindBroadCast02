@@ -29,9 +29,11 @@ Design rules
 
 from __future__ import annotations
 
+import os
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -127,7 +129,7 @@ class ModelContext:
     """
 
     # Path this config file was read from (or None for defaults).
-    config_path: Path | None = None
+    config_path: Optional[Path] = None
     # LLM backend: "ollama", "llama_cpp", "lm_studio", "llama_server"
     llm_backend: str = "ollama"
     # URL of the Ollama-compatible server. Refused if non-local and the
@@ -155,7 +157,7 @@ class ModelContext:
     # ---- construction ---------------------------------------------------
 
     @classmethod
-    def from_path(cls, path: Path | None = None) -> ModelContext:
+    def from_path(cls, path: Optional[Path] = None) -> "ModelContext":
         """Read config from the file next to the app, falling back to defaults."""
         if path is None:
             path = Path.cwd() / _CONFIG_FILENAME
@@ -167,13 +169,13 @@ class ModelContext:
         return cls._from_mapping(data, source=path)
 
     @classmethod
-    def from_mapping(cls, mapping: dict[str, Any],
-                     source: Path | None = None) -> ModelContext:
+    def from_mapping(cls, mapping: Dict[str, Any],
+                     source: Optional[Path] = None) -> "ModelContext":
         return cls._from_mapping(mapping, source=source)
 
     @classmethod
-    def _from_mapping(cls, data: dict[str, Any],
-                      source: Path | None) -> ModelContext:
+    def _from_mapping(cls, data: Dict[str, Any],
+                      source: Optional[Path]) -> "ModelContext":
         config = data.get("mindbroadcast", data)  # legacy support
 
         llm = config.get("llm", {}) or {}
@@ -265,7 +267,7 @@ class ModelContext:
 
     # ---- serialisation --------------------------------------------------
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "config_path": str(self.config_path) if self.config_path else None,
             "llm": {
@@ -282,7 +284,7 @@ class ModelContext:
             },
         }
 
-    def save(self, path: Path | None = None) -> Path:
+    def save(self, path: Optional[Path] = None) -> Path:
         """Write the canonical config file."""
         path = Path(path) if path else Path.cwd() / _CONFIG_FILENAME
         mapping = {

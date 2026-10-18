@@ -10,11 +10,12 @@ so the security guarantees are unchanged — this only replaces the transport
 that raises-by-default with one that really fetches.
 """
 
+from typing import Dict, Optional
 
 import aiohttp
 
-from ..tls import default_ssl_context
 from .fetcher import FetchError
+from ..tls import default_ssl_context
 
 
 class AiohttpTransport:
@@ -27,7 +28,7 @@ class AiohttpTransport:
 
     async def request(self, url: str, *, connect_timeout: float,
                       read_timeout: float,
-                      checkpoint: str | None) -> dict:
+                      checkpoint: Optional[str]) -> Dict:
         headers = {"User-Agent": self.user_agent}
         if checkpoint:
             headers["If-Modified-Since"] = checkpoint
@@ -42,33 +43,34 @@ class AiohttpTransport:
             async with aiohttp.ClientSession(
                     timeout=timeout,
                     connector=aiohttp.TCPConnector(
-                        ssl=default_ssl_context())) as session, session.get(url, headers=headers,
-                                   allow_redirects=False) as response:
-                # Resolve the charset BEFORE consuming the body: aiohttp's
-                # get_encoding() raises "Cannot compute fallback encoding
-                # of a not yet read body" once content.read() has drained
-                # the stream and no charset was advertised (BBC article
-                # pages). Fall back to utf-8.
-                charset = (response.charset or "utf-8")
-                # Read at most max_body_bytes + 1 so an oversized body is
-                # detectable rather than silently truncated.
-                body_bytes = await response.content.read(
-                    self.max_body_bytes + 1)
-                body = body_bytes[:self.max_body_bytes].decode(
-                    charset, errors="replace")
-                # Content-Length is a header string; the fetcher's size
-                # policy compares it against an int limit, so coerce it.
-                declared = response.headers.get("Content-Length")
-                try:
-                    declared_length = int(declared) if declared else None
-                except ValueError:
-                    declared_length = None
-                return {
-                    "status_code": response.status,
-                    "body": body,
-                    "headers": dict(response.headers),
-                    "location": response.headers.get("Location"),
-                    "declared_length": declared_length,
-                }
+                        ssl=default_ssl_context())) as session:
+                async with session.get(url, headers=headers,
+                                       allow_redirects=False) as response:
+                    # Resolve the charset BEFORE consuming the body: aiohttp's
+                    # get_encoding() raises "Cannot compute fallback encoding
+                    # of a not yet read body" once content.read() has drained
+                    # the stream and no charset was advertised (BBC article
+                    # pages). Fall back to utf-8.
+                    charset = (response.charset or "utf-8")
+                    # Read at most max_body_bytes + 1 so an oversized body is
+                    # detectable rather than silently truncated.
+                    body_bytes = await response.content.read(
+                        self.max_body_bytes + 1)
+                    body = body_bytes[:self.max_body_bytes].decode(
+                        charset, errors="replace")
+                    # Content-Length is a header string; the fetcher's size
+                    # policy compares it against an int limit, so coerce it.
+                    declared = response.headers.get("Content-Length")
+                    try:
+                        declared_length = int(declared) if declared else None
+                    except ValueError:
+                        declared_length = None
+                    return {
+                        "status_code": response.status,
+                        "body": body,
+                        "headers": dict(response.headers),
+                        "location": response.headers.get("Location"),
+                        "declared_length": declared_length,
+                    }
         except aiohttp.ClientError as error:
-            raise FetchError("network", url, str(error)) from None
+            raise FetchError("network", url, str(error))

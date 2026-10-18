@@ -15,12 +15,13 @@ stripped before display.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from ..broadcast.entities import BroadcastScript
-from ..broadcast.validation import ValidationReport
 from ..world_model.ranking import RankingResult
+from ..broadcast.entities import BroadcastScript, ValidationOutcome
+from ..broadcast.validation import ValidationReport
+
 
 # Keys that must never reach the analysis view. §18.4 forbids presenting
 # private chain-of-thought as explanation.
@@ -53,31 +54,31 @@ class ShowAnalysis:
     story_id: str = ""
 
     # 3. Evidence
-    evidence: list[dict[str, Any]] = field(default_factory=list)
+    evidence: List[Dict[str, Any]] = field(default_factory=list)
 
     # 4. Contradictions
-    contradictions: list[dict[str, Any]] = field(default_factory=list)
+    contradictions: List[Dict[str, Any]] = field(default_factory=list)
 
     # 5. Interpretation
-    interpretations: list[dict[str, Any]] = field(default_factory=list)
+    interpretations: List[Dict[str, Any]] = field(default_factory=list)
 
     # 6. Persona roles
-    persona_roles: list[dict[str, Any]] = field(default_factory=list)
+    persona_roles: List[Dict[str, Any]] = field(default_factory=list)
 
     # 7. Unresolved questions
-    unresolved_questions: list[str] = field(default_factory=list)
+    unresolved_questions: List[str] = field(default_factory=list)
 
     # 8. Selection factors
-    selection_factors: list[SelectionFactor] = field(default_factory=list)
+    selection_factors: List[SelectionFactor] = field(default_factory=list)
 
     # 9. Generation provenance
-    generation_provenance: dict[str, Any] = field(default_factory=dict)
+    generation_provenance: Dict[str, Any] = field(default_factory=dict)
 
     # 10. Validation state
     validation_state: str = "unknown"
-    validation_findings: list[dict[str, Any]] = field(default_factory=list)
+    validation_findings: List[Dict[str, Any]] = field(default_factory=list)
 
-    generated_at: datetime | None = None
+    generated_at: Optional[datetime] = None
 
     @property
     def is_complete(self) -> bool:
@@ -89,7 +90,7 @@ class ShowAnalysis:
             and self.validation_state != "unknown"
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "segment_id": self.segment_id,
             "editorial_objective": self.editorial_objective,
@@ -144,13 +145,13 @@ class ShowAnalysisBuilder:
         editorial_objective: str = "",
         story_id: str = "",
         story_context: str = "",
-        evidence: list[dict[str, Any]] | None = None,
-        contradictions: list[dict[str, Any]] | None = None,
-        script: BroadcastScript | None = None,
-        persona_roles: list[dict[str, Any]] | None = None,
-        unresolved_questions: list[str] | None = None,
-        ranking: RankingResult | None = None,
-        validation: ValidationReport | None = None,
+        evidence: Optional[List[Dict[str, Any]]] = None,
+        contradictions: Optional[List[Dict[str, Any]]] = None,
+        script: Optional[BroadcastScript] = None,
+        persona_roles: Optional[List[Dict[str, Any]]] = None,
+        unresolved_questions: Optional[List[str]] = None,
+        ranking: Optional[RankingResult] = None,
+        validation: Optional[ValidationReport] = None,
     ) -> ShowAnalysis:
         analysis = ShowAnalysis(
             segment_id=segment_id,
@@ -160,7 +161,7 @@ class ShowAnalysisBuilder:
             evidence=list(evidence or []),
             contradictions=list(contradictions or []),
             unresolved_questions=list(unresolved_questions or []),
-            generated_at=datetime.now(UTC),
+            generated_at=datetime.now(timezone.utc),
         )
 
         # Interpretations: the script's non-factual turns (§18.4 field 5).
@@ -200,12 +201,12 @@ class ShowAnalysisBuilder:
 
         return ShowAnalysis.redact(analysis)
 
-    def _provenance(self, script: BroadcastScript) -> dict[str, Any]:
+    def _provenance(self, script: BroadcastScript) -> Dict[str, Any]:
         """§18.4 field 9: model, prompt version, evidence packet, script version.
 
         Assembled from the turns' generation metadata. No reasoning fields.
         """
-        provenance: dict[str, Any] = {
+        provenance: Dict[str, Any] = {
             "script_version": script.version,
             "evidence_packet_id": script.evidence_packet_id,
             "generation_request_id": script.generation_request_id,

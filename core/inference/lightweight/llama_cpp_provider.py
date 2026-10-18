@@ -31,16 +31,19 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from ...broadcast.providers import (
     GenerationResult,
     LanguageModelProvider,
     ProviderCapabilities,
-    ProviderError,
     ProviderTimeout,
     ProviderUnavailable,
+    ProviderError,
+    SynthesisRequest,
+    SynthesisResult,
+    TTSProvider,
 )
 
 
@@ -54,8 +57,8 @@ class LlamaCppContext:
     threads: int = 4
     n_gpu_layers: int = 0
     host: str = "127.0.0.1"
-    server_proc: subprocess.Popen | None = None
-    log: Any | None = None
+    server_proc: Optional[subprocess.Popen] = None
+    log: Optional[Any] = None
 
     def health(self) -> bool:
         """Return True if the server answers /v1/chat/completions."""
@@ -70,7 +73,7 @@ class LlamaCppContext:
         except Exception:
             return False
 
-    def server_args(self) -> list[str]:
+    def server_args(self) -> List[str]:
         return [
             "llama-server",
             "-m", self.model_path,
@@ -104,7 +107,7 @@ class LlamaCppProvider(LanguageModelProvider):
         threads: int = 4,
         n_gpu_layers: int = 0,
         *,
-        context: LlamaCppContext | None = None,
+        context: Optional[LlamaCppContext] = None,
         base_url: str = "http://localhost:8080",
         timeout_seconds: float = 180.0,
     ):
@@ -122,8 +125,8 @@ class LlamaCppProvider(LanguageModelProvider):
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.context = context
-        self._server: subprocess.Popen | None = None
-        self._started_at: float | None = None
+        self._server: Optional[subprocess.Popen] = None
+        self._started_at: Optional[float] = None
 
         self._capabilities = ProviderCapabilities(
             streaming=False,
@@ -148,7 +151,7 @@ class LlamaCppProvider(LanguageModelProvider):
                 time.sleep(0.5)
         return False
 
-    async def start(self) -> LlamaCppProvider:
+    async def start(self) -> "LlamaCppProvider":
         """Start the server if not already up and return self.
 
         Idempotent: if health is true, does nothing. The app owns which model
@@ -192,7 +195,7 @@ class LlamaCppProvider(LanguageModelProvider):
     def capabilities(self) -> ProviderCapabilities:
         return self._capabilities
 
-    async def generate(self, request: dict[str, Any]) -> GenerationResult:
+    async def generate(self, request: Dict[str, Any]) -> GenerationResult:
         prompt = request.get("prompt") or request.get("objective", "")
         if not prompt:
             raise ProviderError("empty prompt")
@@ -215,8 +218,8 @@ class LlamaCppProvider(LanguageModelProvider):
             finish_reason="stop",
         )
 
-    async def generate_structured(self, request: dict[str, Any],
-                                   schema: dict[str, Any]) -> GenerationResult:
+    async def generate_structured(self, request: Dict[str, Any],
+                                   schema: Dict[str, Any]) -> GenerationResult:
         prompt = request.get("prompt") or request.get("objective", "")
         payload = {
             "model": self.model_path.split("/")[-1],
@@ -242,10 +245,10 @@ class LlamaCppProvider(LanguageModelProvider):
             finish_reason="stop",
         )
 
-    def _post(self, path: str, payload: dict[str, Any],
-              retries: int = 3) -> dict[str, Any]:
+    def _post(self, path: str, payload: Dict[str, Any],
+              retries: int = 3) -> Dict[str, Any]:
         body = json.dumps(payload).encode()
-        last_error: Exception | None = None
+        last_error: Optional[Exception] = None
         for attempt in range(retries):
             req = urllib.request.Request(
                 f"{self.base_url}{path}", data=body,

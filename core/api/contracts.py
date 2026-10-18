@@ -12,9 +12,11 @@ Structured errors carry an error code, a human-readable message, a request
 identifier, retryability, and field-level validation detail (§19.5).
 """
 
+import hashlib
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 API_VERSION = "v1"
 
@@ -50,10 +52,10 @@ class ApiError(Exception):
     message: str
     request_id: str = ""
     retryable: bool = False
-    field_errors: list[FieldError] = field(default_factory=list)
+    field_errors: List[FieldError] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    def to_dict(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
             "error": {
                 "code": self.code.value,
                 "message": self.message,
@@ -103,7 +105,7 @@ class ApiResponse:
     body: Any = None
     api_version: str = API_VERSION
     request_id: str = ""
-    headers: dict[str, str] = field(default_factory=dict)
+    headers: Dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def ok(cls, body: Any, request_id: str = "") -> "ApiResponse":
@@ -118,7 +120,7 @@ class ApiResponse:
         return cls(status=204, body=None, request_id=request_id)
 
     @classmethod
-    def error(cls, error: ApiError, status: int | None = None) -> "ApiResponse":
+    def error(cls, error: ApiError, status: Optional[int] = None) -> "ApiResponse":
         statuses = {
             ErrorCode.VALIDATION_ERROR: 400,
             ErrorCode.UNAUTHORIZED: 401,
@@ -135,8 +137,8 @@ class ApiResponse:
             request_id=error.request_id,
         )
 
-    def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {"api_version": self.api_version}
+    def to_dict(self) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"api_version": self.api_version}
         if self.body is not None:
             result["data"] = self.body
         result["request_id"] = self.request_id
@@ -153,7 +155,7 @@ class StorySummary:
     title: str
     status: str
     unresolved_questions: int = 0
-    last_material_update_at: str | None = None
+    last_material_update_at: Optional[str] = None
 
 
 @dataclass
@@ -179,7 +181,7 @@ class SourceSummary:
     name: str
     source_type: str
     enabled: bool
-    ownership_group: str | None = None
+    ownership_group: Optional[str] = None
 
 
 @dataclass
@@ -191,7 +193,7 @@ class SegmentSummary:
     persona_id: str = ""
     objective: str = ""
     interrupted: bool = False
-    completed_its_point: bool | None = None
+    completed_its_point: Optional[bool] = None
 
 
 @dataclass
@@ -199,8 +201,8 @@ class SessionSummary:
     id: str
     operating_mode: str
     playback_state: str
-    current_segment_id: str | None = None
-    last_completed_segment_id: str | None = None
+    current_segment_id: Optional[str] = None
+    last_completed_segment_id: Optional[str] = None
 
 
 @dataclass
@@ -208,7 +210,7 @@ class SystemStatus:
     """§18.1 question 3: what is the system currently observing and processing."""
     operating_mode: str
     health: str
-    subsystems: dict[str, str] = field(default_factory=dict)
+    subsystems: Dict[str, str] = field(default_factory=dict)
     active_sources: int = 0
     articles_pending: int = 0
     segments_active: int = 0
@@ -218,5 +220,5 @@ class SystemStatus:
 @dataclass
 class HealthStatus:
     status: str = "ok"
-    checked_at: str | None = None
-    checks: dict[str, bool] = field(default_factory=dict)
+    checked_at: Optional[str] = None
+    checks: Dict[str, bool] = field(default_factory=dict)

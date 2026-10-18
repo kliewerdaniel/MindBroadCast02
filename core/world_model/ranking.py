@@ -27,15 +27,16 @@ Three properties are enforced by construction:
 
 import math
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
-from .changes import MaterialChange
+from .changes import ChangeKind, MaterialChange
+
 
 # Default factor weights. Tunable parameters, not universal constants (§10.3).
 # Equal weighting is the documented default; every recorded decision carries
 # the weight-set id so a later change is auditable.
-DEFAULT_WEIGHTS: dict[str, float] = {
+DEFAULT_WEIGHTS: Dict[str, float] = {
     "importance": 1.0,
     "novelty": 1.0,
     "velocity": 0.8,
@@ -62,20 +63,20 @@ class StoryFacts:
     """Everything the ranker needs about one story, from stored records."""
     story_id: str
     title: str = ""
-    now: datetime | None = None
+    now: Optional[datetime] = None
 
     # Importance inputs (§10.2)
-    people_affected: int | None = None
-    economic_scale: float | None = None
+    people_affected: Optional[int] = None
+    economic_scale: Optional[float] = None
     is_irreversible: bool = False
     has_safety_implication: bool = False
     geopolitical_reach: float = 0.0
 
     # Novelty / velocity inputs (§10.3, §10.4)
-    material_changes: list[MaterialChange] = field(default_factory=list)
+    material_changes: List[MaterialChange] = field(default_factory=list)
     article_count_since_coverage: int = 0
-    last_material_update_at: datetime | None = None
-    last_substantial_coverage_at: datetime | None = None
+    last_material_update_at: Optional[datetime] = None
+    last_substantial_coverage_at: Optional[datetime] = None
     story_type: str = "general"
 
     # Evidence inputs (§10.6)
@@ -121,12 +122,12 @@ class FactorValue:
 class RankingResult:
     story_id: str
     score: float
-    factors: list[FactorValue] = field(default_factory=list)
+    factors: List[FactorValue] = field(default_factory=list)
     redundancy_penalty: float = 0.0
     transition_cost: float = 0.0
-    reasons: list[str] = field(default_factory=list)
+    reasons: List[str] = field(default_factory=list)
     weight_set_id: str = ""
-    computed_at: datetime | None = None
+    computed_at: Optional[datetime] = None
 
     @property
     def net_value(self) -> float:
@@ -134,7 +135,7 @@ class RankingResult:
                 - DEFAULT_LAMBDA_REDUNDANCY * self.redundancy_penalty
                 - DEFAULT_MU_TRANSITION * self.transition_cost)
 
-    def to_decision_record(self, decision: str = "SELECTED") -> dict[str, Any]:
+    def to_decision_record(self, decision: str = "SELECTED") -> Dict[str, Any]:
         """§10.11: the structured decision record.
 
         This is the source of truth. A human-readable explanation is derived
@@ -168,7 +169,7 @@ class StoryRanker:
 
     def __init__(
         self,
-        weights: dict[str, float] | None = None,
+        weights: Optional[Dict[str, float]] = None,
         lambda_redundancy: float = DEFAULT_LAMBDA_REDUNDANCY,
         mu_transition: float = DEFAULT_MU_TRANSITION,
         tau_seconds: float = DEFAULT_TAU_SECONDS,
@@ -181,7 +182,7 @@ class StoryRanker:
     # ── the nine factors ─────────────────────────────────
 
     def rank(self, facts: StoryFacts) -> RankingResult:
-        now = facts.now or datetime.now(UTC)
+        now = facts.now or datetime.now(timezone.utc)
         factors = [
             self._importance(facts),
             self._novelty(facts),
@@ -208,7 +209,7 @@ class StoryRanker:
     def _importance(self, f: StoryFacts) -> FactorValue:
         """§10.2. Real-world significance, not attention volume."""
         score = 0.0
-        parts: list[str] = []
+        parts: List[str] = []
 
         if f.people_affected:
             # Log-scaled: 10 and 10,000 affected are different, but not by a
@@ -419,8 +420,8 @@ class StoryRanker:
 
     # ── explanation ──────────────────────────────────────
 
-    def _reasons(self, factors: list[FactorValue],
-                 f: StoryFacts) -> list[str]:
+    def _reasons(self, factors: List[FactorValue],
+                 f: StoryFacts) -> List[str]:
         """§10.11: derived from structured features, in contribution order."""
         ranked = sorted(factors, key=lambda x: -abs(x.contribution))
         reasons = [f"{x.name}: {x.reason}" for x in ranked[:4]
@@ -448,7 +449,7 @@ class StoryRanker:
 
 
 def rank_stories(ranker: StoryRanker,
-                 facts_list: list[StoryFacts]) -> list[RankingResult]:
+                 facts_list: List[StoryFacts]) -> List[RankingResult]:
     """Rank all stories, highest net value first (§10.10 greedy selection)."""
     results = [ranker.rank(f) for f in facts_list]
     results.sort(key=lambda r: -r.net_value)

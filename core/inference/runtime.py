@@ -20,29 +20,25 @@ Design boundaries, from the spec:
   stops cleanly. It never fabricates a segment or fakes audio.
 """
 
+import asyncio
 import threading
-from collections.abc import Callable
+import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
 
 from ..broadcast.context import ContextBuilder, GenerationOrchestrator
 from ..broadcast.director import BroadcastDirector
 from ..broadcast.entities import (
-    AudioChunk,
-    Segment,
-    SegmentStatus,
-    SpeechAct,
-    ValidationOutcome,
+    AudioChunk, BroadcastScript, Segment, SegmentStatus, ScriptTurn,
+    SpeechAct, ValidationOutcome,
 )
 from ..broadcast.providers import (
-    LanguageModelProvider,
-    ProviderError,
-    SynthesisRequest,
+    GenerationResult, LanguageModelProvider, ProviderError, SynthesisRequest,
     TTSProvider,
 )
 from ..broadcast.validation import ScriptValidator
-from ..world_model.ranking import StoryRanker
+from ..world_model.ranking import StoryFacts, StoryRanker
 from .editor import EditorialComposer
 from .voices import VoiceRegistry
 
@@ -52,7 +48,7 @@ class RuntimeConfig:
     """Tunable runtime behavior. Bounded by design (§23.3)."""
     max_segments: int = 10            # stop after N segments (0 = unbounded)
     idle_sleep_seconds: float = 1.0   # sleep when nothing to say (§27.4)
-    script_schema: dict[str, Any] = field(
+    script_schema: Dict[str, Any] = field(
         default_factory=lambda: {"$id": "broadcast_script_v1"})
     persona_id: str = "presenter"
     # Prefer multi-persona dialogue for stories with 2+ facts (§12.4). When the
@@ -68,12 +64,12 @@ class TranscriptLine:
     text: str
     segment_id: str
     delivered: bool = False
-    duration_ms: int | None = None
-    at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    duration_ms: Optional[int] = None
+    at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     # Per-turn attribution for multi-voice segments: [{speaker, text}, ...] in
     # spoken order. Empty for single-voice segments. Lets the console render a
     # debate as attributed lines rather than one anonymous blob.
-    turns: list[dict[str, str]] = field(default_factory=list)
+    turns: List[Dict[str, str]] = field(default_factory=list)
 
 
 class LiveRuntime:
@@ -83,10 +79,10 @@ class LiveRuntime:
         self,
         llm: LanguageModelProvider,
         tts: TTSProvider,
-        validator: ScriptValidator | None = None,
-        ranker: StoryRanker | None = None,
-        config: RuntimeConfig | None = None,
-        director: BroadcastDirector | None = None,
+        validator: Optional[ScriptValidator] = None,
+        ranker: Optional[StoryRanker] = None,
+        config: Optional[RuntimeConfig] = None,
+        director: Optional[BroadcastDirector] = None,
     ):
         self.llm = llm
         self.tts = tts
@@ -99,9 +95,9 @@ class LiveRuntime:
         self.context_builder = ContextBuilder()
         self.editor = EditorialComposer(llm=self.llm)
         self.voices = VoiceRegistry()
-        self.transcript: list[TranscriptLine] = []
+        self.transcript: List[TranscriptLine] = []
         self.segments_produced = 0
-        self.errors: list[str] = []
+        self.errors: List[str] = []
         self._running = False
         # A runtime is shared by the demo, one-cycle, and continuous station
         # paths, and each of those can run on its own thread. `segment_id` is
@@ -128,16 +124,16 @@ class LiveRuntime:
             self.segments_produced += 1
             return f"seg-{self.segments_produced:03d}"
 
-    async def health(self) -> dict[str, bool]:
+    async def health(self) -> Dict[str, bool]:
         """Fail-closed preflight: both providers must be live."""
         return {
             "llm": await self.llm.health_check(),
             "tts": await self.tts.health_check(),
         }
 
-    async def run(self, topics: list[dict[str, Any]],
-                  on_segment: Callable[[TranscriptLine], None] | None = None
-                  ) -> list[TranscriptLine]:
+    async def run(self, topics: List[Dict[str, Any]],
+                  on_segment: Optional[Callable[[TranscriptLine], None]] = None
+                  ) -> List[TranscriptLine]:
         """Broadcast each topic as a validated, synthesized segment.
 
         `topics` is a list of {"objective", "facts": [...], "claims": [...]}.
@@ -167,8 +163,8 @@ class LiveRuntime:
             self._running = False
         return self.transcript
 
-    async def _produce_segment(self, topic: dict[str, Any]
-                               ) -> TranscriptLine | None:
+    async def _produce_segment(self, topic: Dict[str, Any]
+                               ) -> Optional[TranscriptLine]:
         objective = topic.get("objective", "").strip()
         if not objective:
             return None      # nothing to say; silence (§27.4)
@@ -329,9 +325,9 @@ class LiveRuntime:
             duration_ms=synth.duration_ms)
 
     def compose_dialogue(
-        self, objective: str, facts: list[str],
-        lenses: list[Any] | None = None,
-    ) -> Any | None:
+        self, objective: str, facts: List[str],
+        lenses: Optional[List[Any]] = None,
+    ) -> Optional[Any]:
         """Run the §12.4 multi-persona sequence and return a validated script.
 
         Three or more personas independently read the same grounded facts
@@ -370,8 +366,8 @@ class LiveRuntime:
 
     async def _finish_dialogue(
         self, segment_id: str, segment: Any, script: Any,
-        packet: Any, facts: list[str],
-    ) -> TranscriptLine | None:
+        packet: Any, facts: List[str],
+    ) -> Optional[TranscriptLine]:
         """Drive an approved multi-persona script through lifecycle + TTS.
 
         Mirrors the single-voice tail (steps 4-6): legal §13.3 lifecycle to
@@ -399,7 +395,7 @@ class LiveRuntime:
             self.director.advance(segment_id, SegmentStatus.CANCELLED)
             return None
 
-        pcm_parts: list[bytes] = []
+        pcm_parts: List[bytes] = []
         total_ms = 0
         try:
             for persona_id, text in groups:
@@ -446,14 +442,14 @@ class LiveRuntime:
             duration_ms=total_ms, turns=turn_attribution)
 
     @staticmethod
-    def _group_by_speaker(turns: list[Any]) -> list[tuple]:
+    def _group_by_speaker(turns: List[Any]) -> List[tuple]:
         """Collapse consecutive same-persona turns into one synthesis unit.
 
         Returns [(persona_id, joined_text), ...] in order, so a persona's
         back-to-back lines flow as one utterance and the voice only changes
         when the speaker does.
         """
-        groups: list[tuple] = []
+        groups: List[tuple] = []
         for turn in turns:
             text = (turn.text or "").strip()
             if not text:
@@ -465,7 +461,7 @@ class LiveRuntime:
                 groups.append((pid, text))
         return groups
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self) -> Dict[str, Any]:
         return {
             "segments_produced": self.segments_produced,
             "transcript_lines": len(self.transcript),

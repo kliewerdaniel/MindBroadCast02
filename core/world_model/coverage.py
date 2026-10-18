@@ -15,7 +15,8 @@ specifically to prevent that, and it is tested directly.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional
 
 
 @dataclass
@@ -23,14 +24,14 @@ class CoverageFacts:
     story_id: str
     importance: float = 0.0
     prior_coverage_depth: int = 0          # segments aired
-    last_substantial_coverage_at: datetime | None = None
+    last_substantial_coverage_at: Optional[datetime] = None
     unresolved_question_count: int = 0
     missing_historical_context: bool = False
     unexamined_consequences: bool = False
     corrections_needing_clarification: int = 0
     has_material_change: bool = False
     recent_segments_repeated: bool = False
-    now: datetime | None = None
+    now: Optional[datetime] = None
 
 
 @dataclass
@@ -39,7 +40,7 @@ class CoverageAssessment:
     debt: float
     saturation: float
     net_eligibility: float
-    reasons: list[str] = field(default_factory=list)
+    reasons: List[str] = field(default_factory=list)
 
     @property
     def is_saturated(self) -> bool:
@@ -53,10 +54,10 @@ class CoverageModel:
     DEBT_TIME_TAU_HOURS = 48.0
 
     def assess(self, facts: CoverageFacts) -> CoverageAssessment:
-        now = facts.now or datetime.now(UTC)
+        now = facts.now or datetime.now(timezone.utc)
         debt = self._debt(facts, now)
         saturation = self._saturation(facts)
-        reasons: list[str] = []
+        reasons: List[str] = []
 
         if debt > 0:
             reasons.append(f"coverage debt {debt:.2f}")

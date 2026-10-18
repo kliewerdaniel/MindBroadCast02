@@ -18,11 +18,11 @@ metadata only. There is no audio code path here.
 
 import itertools
 import json
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from typing import Any, Callable, Deque, Dict, List, Optional, Set
+
 from collections import deque
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
 
 
 # §19.3's example event types, plus the ones the phases so far produce.
@@ -45,7 +45,7 @@ class StreamEvent:
     id: str
     type: str
     timestamp: datetime
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: Dict[str, Any] = field(default_factory=dict)
     payload_version: int = 1
 
     def to_sse(self) -> str:
@@ -59,7 +59,7 @@ class StreamEvent:
         })
         return f"id: {self.id}\nevent: {self.type}\ndata: {data}\n\n"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type,
@@ -80,16 +80,16 @@ class EventStore:
 
     def __init__(self, retention: int = 10000):
         self.retention = retention
-        self._events: deque[StreamEvent] = deque(maxlen=retention)
+        self._events: Deque[StreamEvent] = deque(maxlen=retention)
         self._counter = itertools.count(1)
-        self._subscribers: list[Callable[[StreamEvent], None]] = []
+        self._subscribers: List[Callable[[StreamEvent], None]] = []
 
-    def emit(self, event_type: str, payload: dict[str, Any] | None = None,
+    def emit(self, event_type: str, payload: Optional[Dict[str, Any]] = None,
              payload_version: int = 1) -> StreamEvent:
         event = StreamEvent(
             id=f"evt-{next(self._counter):012d}",
             type=event_type,
-            timestamp=datetime.now(UTC),
+            timestamp=datetime.now(timezone.utc),
             payload=payload or {},
             payload_version=payload_version,
         )
@@ -99,7 +99,7 @@ class EventStore:
         return event
 
     def replay_after(self, last_event_id: str,
-                     limit: int = 500) -> list[StreamEvent]:
+                     limit: int = 500) -> List[StreamEvent]:
         """Events after `last_event_id`, for a reconnecting client (§19.3).
 
         An unknown id replays nothing rather than everything: a client that
@@ -111,10 +111,10 @@ class EventStore:
         index = ids.index(last_event_id)
         return list(self._events)[index + 1:index + 1 + limit]
 
-    def replay_all(self, limit: int = 500) -> list[StreamEvent]:
+    def replay_all(self, limit: int = 500) -> List[StreamEvent]:
         return list(self._events)[-limit:]
 
-    def latest(self, event_type: str | None = None) -> StreamEvent | None:
+    def latest(self, event_type: Optional[str] = None) -> Optional[StreamEvent]:
         for event in reversed(self._events):
             if event_type is None or event.type == event_type:
                 return event
@@ -123,12 +123,12 @@ class EventStore:
     def subscribe(self, callback: Callable[[StreamEvent], None]) -> None:
         self._subscribers.append(callback)
 
-    def count(self, event_type: str | None = None) -> int:
+    def count(self, event_type: Optional[str] = None) -> int:
         if event_type is None:
             return len(self._events)
         return sum(1 for e in self._events if e.type == event_type)
 
-    def event_ids(self) -> set[str]:
+    def event_ids(self) -> Set[str]:
         return {e.id for e in self._events}
 
 
@@ -142,15 +142,15 @@ class EventStream:
     def __init__(self, store: EventStore):
         self.store = store
 
-    def connect(self, last_event_id: str | None = None) -> list[StreamEvent]:
+    def connect(self, last_event_id: Optional[str] = None) -> List[StreamEvent]:
         """Initial batch on connect: replay after the client's cursor."""
         if last_event_id:
             return self.store.replay_after(last_event_id)
         return self.store.replay_all()
 
-    def format_batch(self, events: list[StreamEvent]) -> str:
+    def format_batch(self, events: List[StreamEvent]) -> str:
         return "".join(e.to_sse() for e in events)
 
-    def on_new_event(self, last_event_id: str | None = None) -> str:
+    def on_new_event(self, last_event_id: Optional[str] = None) -> str:
         """Format everything after the cursor, for a poll-style client."""
         return self.format_batch(self.connect(last_event_id))

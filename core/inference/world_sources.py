@@ -25,6 +25,7 @@ regions rather than the same one.
 """
 
 from dataclasses import dataclass
+from typing import Dict, Iterator, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class WorldSource:
 
 
 # Region -> [WorldSource]. Probed live; dead feeds omitted.
-WORLD_FEEDS: dict[str, list[WorldSource]] = {
+WORLD_FEEDS: Dict[str, List[WorldSource]] = {
     "North America": [
         WorldSource("North America", "NPR",
                     "https://feeds.npr.org/1001/rss.xml", True),
@@ -189,8 +190,7 @@ WORLD_FEEDS: dict[str, list[WorldSource]] = {
         WorldSource("Europe", "EUobserver",
                     "https://euobserver.com/rss", True),
         WorldSource("Europe", "El Pais English",
-                    "https://feeds.elpais.com/mrss-s/pages/ep/site/english.elpais.com/portada",
-                        rue),
+                    "https://feeds.elpais.com/mrss-s/pages/ep/site/english.elpais.com/portada", True),
         WorldSource("Europe", "Le Figaro EN",
                     "https://www.lefigaro.fr/rss/figaro_actualites.xml"),
         WorldSource("Europe", "ANSA English",
@@ -414,20 +414,20 @@ WORLD_FEEDS: dict[str, list[WorldSource]] = {
     ],
 }
 
-def all_feeds() -> list[WorldSource]:
+def all_feeds() -> List[WorldSource]:
     """Every world feed, flattened (registry order, not rotation order)."""
     return [s for feeds in WORLD_FEEDS.values() for s in feeds]
 
 
-def regions() -> list[str]:
+def regions() -> List[str]:
     return list(WORLD_FEEDS.keys())
 
 
-def feeds_for_region(region: str) -> list[WorldSource]:
+def feeds_for_region(region: str) -> List[WorldSource]:
     return WORLD_FEEDS.get(region, [])
 
 
-def full_text_feeds() -> list[WorldSource]:
+def full_text_feeds() -> List[WorldSource]:
     """Feeds that ship full article text — best for multi-fact longform."""
     return [s for s in all_feeds() if s.full_text]
 
@@ -446,7 +446,7 @@ def region_of(url: str) -> str:
     return ""
 
 
-def rotation_order(urls: list[str]) -> list[str]:
+def rotation_order(urls: List[str]) -> List[str]:
     """Order feed URLs so consecutive cycles come from different regions.
 
     The world registry holds far more North American feeds than Oceanian ones.
@@ -473,9 +473,9 @@ def rotation_order(urls: list[str]) -> list[str]:
     their relative order at the front, since they were asked for explicitly.
     Unknown URLs are never dropped.
     """
-    by_region: dict[str, list[str]] = {}
-    ordered_regions: list[str] = []
-    extras: list[str] = []
+    by_region: Dict[str, List[str]] = {}
+    ordered_regions: List[str] = []
+    extras: List[str] = []
     seen = set()
 
     for url in urls:
@@ -504,6 +504,6 @@ def rotation_order(urls: list[str]) -> list[str]:
 
 
 # Convenience tuples for callers that just want (region, name, url).
-def as_tuples() -> list[tuple[str, str, str]]:
+def as_tuples() -> List[Tuple[str, str, str]]:
     """[(region, name, url), ...] for every feed."""
     return [(s.region, s.name, s.url) for s in all_feeds()]

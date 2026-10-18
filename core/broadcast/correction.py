@@ -12,12 +12,11 @@ originally said from what the system now believes is supported.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from .entities import (
-    BroadcastScript,
-    Segment,
+    BroadcastScript, Segment, SegmentStatus, ScriptTurn,
 )
 
 
@@ -33,19 +32,19 @@ class CorrectionStep:
 class CorrectionWorkflow:
     """§15.7. The workflow as a recorded, ordered sequence."""
     claim_id: str
-    affected_segment_ids: list[str] = field(default_factory=list)
-    affected_script_ids: list[str] = field(default_factory=list)
+    affected_segment_ids: List[str] = field(default_factory=list)
+    affected_script_ids: List[str] = field(default_factory=list)
     materially_changes: bool = False
     reason: str = ""
-    correction_script_id: str | None = None
+    correction_script_id: Optional[str] = None
     correction_validated: bool = False
     editorial_priority: float = 0.0
-    linked_to_original_segment_id: str | None = None
+    linked_to_original_segment_id: Optional[str] = None
     original_transcript_preserved: bool = False
-    summaries_marked_for_reassessment: list[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    summaries_marked_for_reassessment: List[str] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def steps(self) -> list[CorrectionStep]:
+    def steps(self) -> List[CorrectionStep]:
         """§15.7's ten steps, each independently observable."""
         return [
             CorrectionStep(1, "identify_affected_claim", bool(self.claim_id)),
@@ -80,21 +79,21 @@ class TranscriptEntry:
     """
     segment_id: str
     script_version: int
-    turns: list[dict[str, Any]]
-    broadcast_at: datetime | None = None
-    correction_of: str | None = None
-    superseded_by: str | None = None
+    turns: List[Dict[str, Any]]
+    broadcast_at: Optional[datetime] = None
+    correction_of: Optional[str] = None
+    superseded_by: Optional[str] = None
 
 
 class TranscriptArchive:
     """§15.7. Append-only record of what was said, as it was said."""
 
     def __init__(self):
-        self._entries: list[TranscriptEntry] = []
+        self._entries: List[TranscriptEntry] = []
 
     def record(self, segment_id: str, script: BroadcastScript,
-               correction_of: str | None = None,
-               broadcast_at: datetime | None = None) -> TranscriptEntry:
+               correction_of: Optional[str] = None,
+               broadcast_at: Optional[datetime] = None) -> TranscriptEntry:
         entry = TranscriptEntry(
             segment_id=segment_id,
             script_version=script.version,
@@ -106,13 +105,13 @@ class TranscriptArchive:
                 "claim_references": list(t.claim_references),
                 "evidence_references": list(t.evidence_references),
             } for t in script.turns],
-            broadcast_at=broadcast_at or datetime.now(UTC),
+            broadcast_at=broadcast_at or datetime.now(timezone.utc),
             correction_of=correction_of,
         )
         self._entries.append(entry)
         return entry
 
-    def entries_for(self, segment_id: str) -> list[TranscriptEntry]:
+    def entries_for(self, segment_id: str) -> List[TranscriptEntry]:
         return [e for e in self._entries if e.segment_id == segment_id]
 
     def mark_superseded(self, segment_id: str,
@@ -122,24 +121,24 @@ class TranscriptArchive:
             if entry.segment_id == segment_id:
                 entry.superseded_by = by_entry.segment_id
 
-    def all_entries(self) -> list[TranscriptEntry]:
+    def all_entries(self) -> List[TranscriptEntry]:
         return list(self._entries)
 
 
 class CorrectionEngine:
     """Runs the §15.7 workflow against stored records."""
 
-    def __init__(self, archive: TranscriptArchive | None = None):
+    def __init__(self, archive: Optional[TranscriptArchive] = None):
         self.archive = archive or TranscriptArchive()
 
     def identify_affected_segments(
         self,
         claim_id: str,
-        segments: list[Segment],
-        scripts: dict[str, BroadcastScript],
-    ) -> list[str]:
+        segments: List[Segment],
+        scripts: Dict[str, BroadcastScript],
+    ) -> List[str]:
         """§15.7 step 2. Every broadcast segment that referenced the claim."""
-        affected: list[str] = []
+        affected: List[str] = []
         for segment in segments:
             script = scripts.get(segment.script_id or "")
             if script is None:
@@ -168,14 +167,14 @@ class CorrectionEngine:
     def build_correction(
         self,
         claim_id: str,
-        affected_segment_ids: list[str],
+        affected_segment_ids: List[str],
         materially_changes: bool,
         reason: str,
-        correction_script_id: str | None = None,
+        correction_script_id: Optional[str] = None,
         correction_validated: bool = False,
         editorial_priority: float = 0.0,
-        linked_to_original_segment_id: str | None = None,
-        summaries_marked: list[str] | None = None,
+        linked_to_original_segment_id: Optional[str] = None,
+        summaries_marked: Optional[List[str]] = None,
     ) -> CorrectionWorkflow:
         """Assemble the workflow, recording the original transcript as preserved.
 
@@ -200,8 +199,8 @@ class CorrectionEngine:
         workflow: CorrectionWorkflow,
         correction_script: BroadcastScript,
         original_segment_id: str,
-        original_script: BroadcastScript | None = None,
-    ) -> dict[str, Any]:
+        original_script: Optional[BroadcastScript] = None,
+    ) -> Dict[str, Any]:
         """Record a correction without erasing what was originally said.
 
         §15.7 step 9: the original transcript must be preserved. If the

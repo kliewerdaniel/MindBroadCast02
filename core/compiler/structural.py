@@ -16,7 +16,8 @@ text at those offsets reproduces the segment exactly.
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 
 from ..models import Article
 
@@ -45,12 +46,12 @@ class Sentence(Span):
 @dataclass
 class Paragraph(Span):
     index: int = 0
-    heading: str | None = None
+    heading: Optional[str] = None
 
 
 @dataclass
 class Quotation(Span):
-    speaker: str | None = None
+    speaker: Optional[str] = None
     quote_type: str = "reported"      # direct | reported
 
 
@@ -71,23 +72,23 @@ class NormalizedDocument:
     article_id: str
     source_text: str
     title: str = ""
-    author: str | None = None
+    author: Optional[str] = None
     language: str = "en"
-    published_at: datetime | None = None
-    paragraphs: list[Paragraph] = field(default_factory=list)
-    sentences: list[Sentence] = field(default_factory=list)
-    quotations: list[Quotation] = field(default_factory=list)
-    warnings: list[ExtractionWarning] = field(default_factory=list)
+    published_at: Optional[datetime] = None
+    paragraphs: List[Paragraph] = field(default_factory=list)
+    sentences: List[Sentence] = field(default_factory=list)
+    quotations: List[Quotation] = field(default_factory=list)
+    warnings: List[ExtractionWarning] = field(default_factory=list)
     pass_name: str = "structural_normalization"
     pass_version: str = "1.0.0"
     created_at: datetime = field(
-        default_factory=lambda: datetime.now(UTC))
+        default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def has_content(self) -> bool:
         return bool(self.sentences)
 
-    def sentence_at(self, offset: int) -> Sentence | None:
+    def sentence_at(self, offset: int) -> Optional[Sentence]:
         """The sentence containing a character offset."""
         for sentence in self.sentences:
             if sentence.start <= offset < sentence.end:
@@ -123,7 +124,7 @@ class StructuralNormalizer:
 
     def run(self, article: Article) -> NormalizedDocument:
         text = article.normalized_text or ""
-        warnings: list[ExtractionWarning] = []
+        warnings: List[ExtractionWarning] = []
 
         if not text.strip():
             warnings.append(ExtractionWarning(
@@ -154,8 +155,8 @@ class StructuralNormalizer:
 
     # ── segmentation ─────────────────────────────────────
 
-    def _segment_paragraphs(self, text: str) -> list[Paragraph]:
-        paragraphs: list[Paragraph] = []
+    def _segment_paragraphs(self, text: str) -> List[Paragraph]:
+        paragraphs: List[Paragraph] = []
         cursor = 0
         for index, chunk in enumerate(_PARAGRAPH_SPLIT.split(text)):
             if not chunk.strip():
@@ -173,8 +174,8 @@ class StructuralNormalizer:
 
     def _segment_sentences(
         self, text: str, paragraph_count: int
-    ) -> list[Sentence]:
-        sentences: list[Sentence] = []
+    ) -> List[Sentence]:
+        sentences: List[Sentence] = []
         paragraph_of = self._paragraph_lookup(text, paragraph_count)
         index = 0
         for start, end in self._sentence_bounds(text):
@@ -189,7 +190,7 @@ class StructuralNormalizer:
             index += 1
         return sentences
 
-    def _sentence_bounds(self, text: str) -> list[tuple[int, int]]:
+    def _sentence_bounds(self, text: str) -> List[Tuple[int, int]]:
         """Non-overlapping (start, end) spans covering the text.
 
         Offsets are computed by stripping leading/trailing whitespace from
@@ -197,7 +198,7 @@ class StructuralNormalizer:
         segment exactly. That property is what makes the offsets usable for
         provenance rather than merely present.
         """
-        bounds: list[tuple[int, int]] = []
+        bounds: List[Tuple[int, int]] = []
         start = 0
         position = 0
         length = len(text)
@@ -222,7 +223,7 @@ class StructuralNormalizer:
         return bounds
 
     @staticmethod
-    def _trimmed(text: str, start: int, end: int) -> tuple[int, int]:
+    def _trimmed(text: str, start: int, end: int) -> Tuple[int, int]:
         """Shrink (start, end) so the span excludes surrounding whitespace."""
         while start < end and text[start].isspace():
             start += 1
@@ -261,9 +262,9 @@ class StructuralNormalizer:
 
     # ── quotations ───────────────────────────────────────
 
-    def _find_quotations(self, text: str) -> list[Quotation]:
-        quotations: list[Quotation] = []
-        for _match in _QUOTED.finditer(text):
+    def _find_quotations(self, text: str) -> List[Quotation]:
+        quotations: List[Quotation] = []
+        for match in _QUOTED.finditer(text):
             quotations.append(Quotation(
                 start=match.start(), end=match.end(),
                 text=match.group(0),
@@ -273,7 +274,7 @@ class StructuralNormalizer:
             ))
         return quotations
 
-    def _speaker_before(self, text: str, position: int) -> str | None:
+    def _speaker_before(self, text: str, position: int) -> Optional[str]:
         """The speaker named immediately before a quotation.
 
         Deliberately limited to the current sentence: scanning further back
@@ -284,7 +285,7 @@ class StructuralNormalizer:
         start = start + 1 if start != -1 else 0
         window = text[start:position]
         match = None
-        for _match in re.finditer(
+        for match in re.finditer(
                 r"([A-Z][\w.-]*(?:\s+[A-Z][\w.-]*){0,3})\s*,?\s*"
                 r"(?:said|says|stated|announced|according to|told|added|"
                 r"argued|claimed|warned|noted|explained)\b", window):
@@ -293,7 +294,7 @@ class StructuralNormalizer:
             return match.group(1).strip()
         return None
 
-    def _speaker_after(self, text: str, position: int) -> str | None:
+    def _speaker_after(self, text: str, position: int) -> Optional[str]:
         """The speaker named immediately after a quotation.
 
         Handles the trailing-attribution form: '"We expect support," the
@@ -312,7 +313,7 @@ class StructuralNormalizer:
         return None
 
 
-def verify_spans(document: NormalizedDocument) -> list[str]:
+def verify_spans(document: NormalizedDocument) -> List[str]:
     """Return a list of spans that do not match the source text.
 
     An empty list means every recorded offset is accurate. This is the check
@@ -323,7 +324,7 @@ def verify_spans(document: NormalizedDocument) -> list[str]:
     offset that happens to land on a coincidental substring would pass a
     containment test, and that is precisely the failure this exists to catch.
     """
-    problems: list[str] = []
+    problems: List[str] = []
     for span in list(document.sentences) + list(document.paragraphs) \
             + list(document.quotations):
         if span.start < 0 or span.end > len(document.source_text):

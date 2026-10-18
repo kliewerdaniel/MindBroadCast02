@@ -18,26 +18,21 @@ not a convention a prompt might violate.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from ..broadcast.entities import (
-    BroadcastScript,
-    ScriptTurn,
-    SpeechAct,
+    BroadcastScript, ScriptTurn, SpeechAct, ValidationOutcome,
 )
 from ..broadcast.validation import ScriptValidator
 from .analysis import (
-    AnalysisFunction,
-    DisagreementDetector,
-    DisagreementGuard,
-    IndependentAnalysisRunner,
-    SharedEvidencePacket,
+    AnalysisFunction, DisagreementDetector, DisagreementGuard,
+    IndependentAnalysisRunner, SharedEvidencePacket,
 )
+from .consistency import ConsistencyEvaluator, ImitationDetector
 from .dialogue import DialogueComposer
 from .entities import (
-    Disagreement,
-    MemoryType,
-    PersonaAnalysis,
+    Disagreement, MemoryType, PersonaAnalysis, PersonaConfig, ResolutionStatus,
     StructuredExchange,
 )
 from .memory import MemoryStore, PersonaRegistry
@@ -45,12 +40,12 @@ from .memory import MemoryStore, PersonaRegistry
 
 @dataclass
 class DialogueOutcome:
-    packet: SharedEvidencePacket | None = None
-    analyses: list[PersonaAnalysis] = field(default_factory=list)
-    disagreements: list[Disagreement] = field(default_factory=list)
-    exchange: StructuredExchange | None = None
-    script: BroadcastScript | None = None
-    validation: Any | None = None
+    packet: Optional[SharedEvidencePacket] = None
+    analyses: List[PersonaAnalysis] = field(default_factory=list)
+    disagreements: List[Disagreement] = field(default_factory=list)
+    exchange: Optional[StructuredExchange] = None
+    script: Optional[BroadcastScript] = None
+    validation: Optional[Any] = None
     suppressed: bool = False
     suppression_reason: str = ""
 
@@ -67,10 +62,10 @@ class DialogueOrchestrator:
     def __init__(
         self,
         registry: PersonaRegistry,
-        memory: MemoryStore | None = None,
-        runner: IndependentAnalysisRunner | None = None,
-        validator: ScriptValidator | None = None,
-        composer: DialogueComposer | None = None,
+        memory: Optional[MemoryStore] = None,
+        runner: Optional[IndependentAnalysisRunner] = None,
+        validator: Optional[ScriptValidator] = None,
+        composer: Optional[DialogueComposer] = None,
     ):
         self.registry = registry
         self.memory = memory or MemoryStore()
@@ -88,7 +83,7 @@ class DialogueOrchestrator:
     def run(
         self,
         packet: SharedEvidencePacket,
-        persona_ids: list[str],
+        persona_ids: List[str],
     ) -> DialogueOutcome:
         """Execute steps 1–8 of §12.4."""
         outcome = DialogueOutcome(packet=packet)
@@ -137,7 +132,7 @@ class DialogueOrchestrator:
         the exchange was built from. Transition framing is added as an explicit
         transition turn so the segment opens by stating the shared facts.
         """
-        turns: list[ScriptTurn] = []
+        turns: List[ScriptTurn] = []
 
         if packet.facts:
             turns.append(ScriptTurn(

@@ -28,20 +28,20 @@ Discipline, from the local-inference-integration rules:
 """
 
 import asyncio
-import contextlib
+import base64
 import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from ..broadcast.providers import (
-    ProviderCapabilities,
-    SynthesisRequest,
-    SynthesisResult,
+    ProviderCapabilities, SynthesisRequest, SynthesisResult, TTSProvider,
 )
+
 
 # The interpreter that has a working mlx_audio with the qwen3_tts module.
 # Overridable via env; auto-detected among known-good pythons otherwise.
@@ -88,7 +88,7 @@ main()
 '''
 
 
-def _detect_interpreter() -> str | None:
+def _detect_interpreter() -> Optional[str]:
     """Find a python with a working mlx_audio qwen3_tts module."""
     import shutil
     candidates = [DEFAULT_TTS_PYTHON] if DEFAULT_TTS_PYTHON else []
@@ -118,7 +118,7 @@ def _detect_interpreter() -> str | None:
     return None
 
 
-def _clean_env() -> dict[str, str]:
+def _clean_env() -> Dict[str, str]:
     """Strip PYTHONPATH and PYTHONHOME — the env-leak that crashes a
     different-Python subprocess mid-synthesis."""
     return {k: v for k, v in os.environ.items()
@@ -142,13 +142,13 @@ class Qwen3TTSProvider:
         self._capabilities = ProviderCapabilities(
             streaming=False, max_context_tokens=1_000_000,
             notes="Qwen3-TTS 12Hz MLX 4-bit; 24kHz mono; optional ICL voice clone")
-        self._interpreter: str | None = None
+        self._interpreter: Optional[str] = None
         self._interpreter_checked = False
 
     def capabilities(self) -> ProviderCapabilities:
         return self._capabilities
 
-    def interpreter(self) -> str | None:
+    def interpreter(self) -> Optional[str]:
         if not self._interpreter_checked:
             self._interpreter = _detect_interpreter()
             self._interpreter_checked = True
@@ -171,8 +171,8 @@ class Qwen3TTSProvider:
             None, self.health_check_sync)
 
     def _synthesize_blocking(self, text: str, attempt: str,
-                             ref_audio: str | None,
-                             ref_text: str | None) -> dict[str, Any]:
+                             ref_audio: Optional[str],
+                             ref_text: Optional[str]) -> Dict[str, Any]:
         interpreter = self.interpreter()
         if interpreter is None:
             raise RuntimeError(
@@ -203,8 +203,10 @@ class Qwen3TTSProvider:
             return json.loads(result.stdout.decode().strip().splitlines()[-1])
         finally:
             for path in (worker_path,):
-                with contextlib.suppress(OSError):
+                try:
                     os.unlink(path)
+                except OSError:
+                    pass
 
     async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
         loop = asyncio.get_event_loop()
@@ -220,8 +222,10 @@ class Qwen3TTSProvider:
 
         with open(info["path"], "rb") as handle:
             wav_bytes = handle.read()
-        with contextlib.suppress(OSError):
+        try:
             os.unlink(info["path"])
+        except OSError:
+            pass
 
         # Convert the WAV to raw pcm_s16le for the internal buffer. The buffer
         # and its format normalization (§16.5) expect canonical samples.

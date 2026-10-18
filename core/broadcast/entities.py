@@ -15,11 +15,12 @@ Distinctions this module exists to enforce:
 
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from ..models import _new_id, _utcnow
+
 
 # ── §13.3 Segment lifecycle ──────────────────────────────────────────
 
@@ -52,7 +53,7 @@ class SegmentStatus(Enum):
 
 # Legal transitions (§13.3). Everything not listed is illegal, and the
 # director refuses it rather than logging a warning.
-SEGMENT_TRANSITIONS: dict[SegmentStatus, set] = {
+SEGMENT_TRANSITIONS: Dict[SegmentStatus, set] = {
     SegmentStatus.PROPOSED: {SegmentStatus.PLANNED, SegmentStatus.CANCELLED},
     SegmentStatus.PLANNED: {
         SegmentStatus.GENERATING, SegmentStatus.CANCELLED,
@@ -231,8 +232,8 @@ class Persona:
     name: str = ""
     description: str = ""
     configuration_version: str = "1.0.0"
-    voice_profile_id: str | None = None
-    editorial_constraints: list[str] = dc_field(default_factory=list)
+    voice_profile_id: Optional[str] = None
+    editorial_constraints: List[str] = dc_field(default_factory=list)
     uncertainty_policy: str = "explicit"
     created_at: datetime = dc_field(default_factory=_utcnow)
 
@@ -253,7 +254,7 @@ class VoiceProfile:
     voice_id: str = ""
     language: str = "en"
     default_rate: float = 1.0
-    pitch_parameters: dict[str, Any] = dc_field(default_factory=dict)
+    pitch_parameters: Dict[str, Any] = dc_field(default_factory=dict)
     output_format: str = "pcm_s16le"
     normalization_policy: str = "none"
     configuration_version: str = "1.0.0"
@@ -274,21 +275,21 @@ class EvidencePacket:
     id: str = dc_field(default_factory=_new_id)
     world_snapshot_id: str = ""
     segment_objective: str = ""
-    supporting_claims: list[str] = dc_field(default_factory=list)
-    contradicting_claims: list[str] = dc_field(default_factory=list)
-    evidence_ids: list[str] = dc_field(default_factory=list)
-    historical_context_ids: list[str] = dc_field(default_factory=list)
-    previously_broadcast_ids: list[str] = dc_field(default_factory=list)
-    unresolved_questions: list[str] = dc_field(default_factory=list)
-    required_disclaimers: list[str] = dc_field(default_factory=list)
-    persona_memory_ids: list[str] = dc_field(default_factory=list)
+    supporting_claims: List[str] = dc_field(default_factory=list)
+    contradicting_claims: List[str] = dc_field(default_factory=list)
+    evidence_ids: List[str] = dc_field(default_factory=list)
+    historical_context_ids: List[str] = dc_field(default_factory=list)
+    previously_broadcast_ids: List[str] = dc_field(default_factory=list)
+    unresolved_questions: List[str] = dc_field(default_factory=list)
+    required_disclaimers: List[str] = dc_field(default_factory=list)
+    persona_memory_ids: List[str] = dc_field(default_factory=list)
     # §14.4: the packet preserves the distinction between source material,
     # system summaries, and persona interpretation.
-    content_provenance: dict[str, str] = dc_field(default_factory=dict)
+    content_provenance: Dict[str, str] = dc_field(default_factory=dict)
     created_at: datetime = dc_field(default_factory=_utcnow)
 
     @property
-    def claim_ids(self) -> list[str]:
+    def claim_ids(self) -> List[str]:
         return self.supporting_claims + self.contradicting_claims
 
 
@@ -303,7 +304,7 @@ class GenerationRequest:
     idempotency_key: str = ""
     task_type: str = ""
     segment_id: str = ""
-    input_record_ids: list[str] = dc_field(default_factory=list)
+    input_record_ids: List[str] = dc_field(default_factory=list)
     evidence_packet_id: str = ""
     persona_id: str = ""
     persona_configuration_version: str = ""
@@ -312,11 +313,11 @@ class GenerationRequest:
     model_selection_policy: str = "local_default"
     maximum_output_tokens: int = 2048
     created_at: datetime = dc_field(default_factory=_utcnow)
-    deadline: datetime | None = None
+    deadline: Optional[datetime] = None
     max_attempts: int = 2
-    metadata: dict[str, Any] = dc_field(default_factory=dict)
+    metadata: Dict[str, Any] = dc_field(default_factory=dict)
 
-    def is_expired(self, now: datetime | None = None) -> bool:
+    def is_expired(self, now: Optional[datetime] = None) -> bool:
         if self.deadline is None:
             return False
         return (now or _utcnow()) >= self.deadline
@@ -337,11 +338,11 @@ class GenerationAttempt:
     prompt_version: str = ""
     schema_version: str = ""
     started_at: datetime = dc_field(default_factory=_utcnow)
-    completed_at: datetime | None = None
-    latency_ms: int | None = None
-    token_usage: dict[str, int] | None = None
+    completed_at: Optional[datetime] = None
+    latency_ms: Optional[int] = None
+    token_usage: Optional[Dict[str, int]] = None
     failure_classification: str = ""
-    validation_results: dict[str, str] = dc_field(default_factory=dict)
+    validation_results: Dict[str, str] = dc_field(default_factory=dict)
     disposition: str = "pending"
 
 
@@ -356,14 +357,14 @@ class ScriptTurn:
     persona_id: str = ""
     text: str = ""
     speech_act: SpeechAct = SpeechAct.FACTUAL_REPORT
-    claim_references: list[str] = dc_field(default_factory=list)
-    evidence_references: list[str] = dc_field(default_factory=list)
-    uncertainty_markers: list[str] = dc_field(default_factory=list)
+    claim_references: List[str] = dc_field(default_factory=list)
+    evidence_references: List[str] = dc_field(default_factory=list)
+    uncertainty_markers: List[str] = dc_field(default_factory=list)
     attribution: str = ""
-    expected_duration_ms: int | None = None
-    epistemic_function: EpistemicFunction | None = None
-    clause_functions: list[dict[str, Any]] = dc_field(default_factory=list)
-    generation_metadata: dict[str, Any] = dc_field(default_factory=dict)
+    expected_duration_ms: Optional[int] = None
+    epistemic_function: Optional[EpistemicFunction] = None
+    clause_functions: List[Dict[str, Any]] = dc_field(default_factory=list)
+    generation_metadata: Dict[str, Any] = dc_field(default_factory=dict)
     validation_status: ValidationOutcome = ValidationOutcome.REQUIRES_REVIEW
 
     @property
@@ -389,17 +390,17 @@ class BroadcastScript:
     generation_request_id: str = ""
     evidence_packet_id: str = ""
     status: ValidationOutcome = ValidationOutcome.REQUIRES_REVIEW
-    turns: list[ScriptTurn] = dc_field(default_factory=list)
-    qualifications: list[str] = dc_field(default_factory=list)
-    supersedes_script_id: str | None = None
+    turns: List[ScriptTurn] = dc_field(default_factory=list)
+    qualifications: List[str] = dc_field(default_factory=list)
+    supersedes_script_id: Optional[str] = None
     world_snapshot_id: str = ""
 
     @property
-    def substantive_turns(self) -> list[ScriptTurn]:
+    def substantive_turns(self) -> List[ScriptTurn]:
         return [t for t in self.turns if t.is_substantive]
 
     @property
-    def all_claim_references(self) -> list[str]:
+    def all_claim_references(self) -> List[str]:
         return [c for t in self.turns for c in t.claim_references]
 
 
@@ -421,13 +422,13 @@ class Segment:
     status: SegmentStatus = SegmentStatus.PROPOSED
     content_state: ContentState = ContentState.GENERATED
     persona_id: str = ""
-    script_id: str | None = None
+    script_id: Optional[str] = None
     media_generation_id: str = ""
-    expected_duration_ms: int | None = None
-    interruption_id: str | None = None
-    completed_its_point: bool | None = None
+    expected_duration_ms: Optional[int] = None
+    interruption_id: Optional[str] = None
+    completed_its_point: Optional[bool] = None
     resume_later: bool = False
-    validation_outcome: ValidationOutcome | None = None
+    validation_outcome: Optional[ValidationOutcome] = None
     created_at: datetime = dc_field(default_factory=_utcnow)
     updated_at: datetime = dc_field(default_factory=_utcnow)
 
@@ -459,16 +460,16 @@ class BroadcastSession:
     """
     id: str = dc_field(default_factory=_new_id)
     started_at: datetime = dc_field(default_factory=_utcnow)
-    stopped_at: datetime | None = None
+    stopped_at: Optional[datetime] = None
     operating_mode: str = "live"
-    current_plan_id: str | None = None
-    current_segment_id: str | None = None
-    current_persona_id: str | None = None
+    current_plan_id: Optional[str] = None
+    current_segment_id: Optional[str] = None
+    current_persona_id: Optional[str] = None
     playback_state: PlaybackState = PlaybackState.IDLE
     session_sequence: int = 0
-    last_completed_segment_id: str | None = None
-    pending_interruption_id: str | None = None
-    metadata: dict[str, Any] = dc_field(default_factory=dict)
+    last_completed_segment_id: Optional[str] = None
+    pending_interruption_id: Optional[str] = None
+    metadata: Dict[str, Any] = dc_field(default_factory=dict)
 
     def next_sequence(self) -> int:
         self.session_sequence += 1
@@ -496,7 +497,7 @@ class AudioChunk:
     sample_rate: int = 24000
     channels: int = 1
     sample_format: str = "pcm_s16le"
-    duration_ms: int | None = None
+    duration_ms: Optional[int] = None
     is_end_of_segment: bool = False
     created_at: datetime = dc_field(default_factory=_utcnow)
 
@@ -517,8 +518,8 @@ class AudioArtifact:
     voice_profile_version: str = ""
     audio_format: str = ""
     content_hash: str = ""
-    duration_ms: int | None = None
+    duration_ms: Optional[int] = None
     created_at: datetime = dc_field(default_factory=_utcnow)
     retention_policy: str = "configurable"
-    expires_at: datetime | None = None
+    expires_at: Optional[datetime] = None
     storage_path: str = ""

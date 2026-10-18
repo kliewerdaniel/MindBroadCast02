@@ -16,11 +16,11 @@ Trade-offs the user should see, honestly:
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional
 
 from ...broadcast.providers import (
     ProviderCapabilities,
@@ -44,7 +44,7 @@ class PiperTTSProvider(TTSProvider):
 
     def __init__(
         self,
-        voice_file: str | None = None,
+        voice_file: Optional[str] = None,
         language: str = "en-us",
         speed: float = 1.0,
         *,
@@ -67,7 +67,9 @@ class PiperTTSProvider(TTSProvider):
         if shutil_which("piper") is None:
             return False
         import os
-        return os.path.exists(self._voice_file)
+        if not os.path.exists(self._voice_file):
+            return False
+        return True
 
     async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
         if not await self.health_check():
@@ -86,7 +88,7 @@ class PiperTTSProvider(TTSProvider):
             audio = result.stdout
             duration_ms = int(len(audio) / (self.sample_rate * 2) * 1000)
         except Exception as error:
-            raise ProviderError(f"Piper synthesis failed: {error}") from error
+            raise ProviderError(f"Piper synthesis failed: {error}")
 
         return SynthesisResult(
             audio=audio,
@@ -158,7 +160,7 @@ class EspeakTTSProvider(TTSProvider):
                 raise ProviderError("eSpeak produced no audio")
             duration_ms = int(len(audio) / (self.sample_rate * 2) * 1000)
         except Exception as error:
-            raise ProviderError(f"eSpeak synthesis failed: {error}") from error
+            raise ProviderError(f"eSpeak synthesis failed: {error}")
 
         return SynthesisResult(
             audio=audio,
@@ -185,7 +187,7 @@ class SayTTSProvider(TTSProvider):
 
     def __init__(
         self,
-        voice: str | None = None,
+        voice: Optional[str] = None,
         speed: float = 1.0,
         *,
         sample_rate: int = 24000,
@@ -209,8 +211,8 @@ class SayTTSProvider(TTSProvider):
         if not await self.health_check():
             raise ProviderError(
                 "macOS `say` unavailable: this backend is macOS-only.")
-        import os
         import tempfile
+        import os
         # `say` writes a WAV file; -r is words per minute (default ~175).
         rate = int(175 * max(0.5, min(2.0, self.speed)))
         path = None
@@ -234,11 +236,13 @@ class SayTTSProvider(TTSProvider):
         except ProviderError:
             raise
         except Exception as error:
-            raise ProviderError(f"say synthesis failed: {error}") from error
+            raise ProviderError(f"say synthesis failed: {error}")
         finally:
             if path and os.path.exists(path):
-                with contextlib.suppress(OSError):
+                try:
                     os.unlink(path)
+                except OSError:
+                    pass
 
         return SynthesisResult(
             audio=audio,
@@ -252,7 +256,8 @@ class SayTTSProvider(TTSProvider):
         )
 
 
-def shutil_which(binary: str) -> str | None:
+def shutil_which(binary: str) -> Optional[str]:
+    import shutil
     return shutil.which(binary)
 
 

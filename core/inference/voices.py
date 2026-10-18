@@ -13,14 +13,16 @@ stays Chris throughout.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
 
 # The single voice the station speaks in. A zero-shot reference clip pins the
 # timbre for every segment, across personas and stories.
 _HERE = os.path.dirname(os.path.abspath(__file__))          # core/inference
 
 
-def _candidate_clip_dirs() -> list[str]:
+def _candidate_clip_dirs() -> List[str]:
     """Everywhere chris.wav may legitimately live, best first.
 
     A frozen one-file build extracts to an ephemeral temp dir, so resolving the
@@ -32,7 +34,7 @@ def _candidate_clip_dirs() -> list[str]:
     """
     import sys
 
-    dirs: list[str] = []
+    dirs: List[str] = []
 
     # 1. The user's data dir — where a replaced/updated clip belongs, and the
     #    only writable location for a frozen .app inside a read-only DMG.
@@ -89,15 +91,15 @@ class VoiceProfile:
     """
     persona_id: str
     speed: float = 1.0
-    reference_audio: str | None = None       # path or URL to a ref clip
-    reference_text: str | None = None
-    instruct: str | None = None
+    reference_audio: Optional[str] = None       # path or URL to a ref clip
+    reference_text: Optional[str] = None
+    instruct: Optional[str] = None
 
 
 def chris_voice(
     persona_id: str,
     speed: float = 1.0,
-    instruct: str | None = None,
+    instruct: Optional[str] = None,
 ) -> VoiceProfile:
     """A profile speaking in Chris's voice, with the given delivery.
 
@@ -115,7 +117,7 @@ def chris_voice(
 
 # Default newsroom voices: all Chris, differing only in delivery. Demeanor is
 # scoped to pacing/tone so it never asks for a different speaker.
-DEFAULT_VOICES: dict[str, VoiceProfile] = {
+DEFAULT_VOICES: Dict[str, VoiceProfile] = {
     "analyst": chris_voice(
         "analyst", speed=1.08,
         instruct="Brisk, direct, and confident news delivery."),
@@ -136,8 +138,8 @@ class VoiceRegistry:
     an unknown persona never produces a different timbre or a crash.
     """
 
-    def __init__(self, voices: dict[str, VoiceProfile] | None = None):
-        self.voices: dict[str, VoiceProfile] = dict(voices or DEFAULT_VOICES)
+    def __init__(self, voices: Optional[Dict[str, VoiceProfile]] = None):
+        self.voices: Dict[str, VoiceProfile] = dict(voices or DEFAULT_VOICES)
         self.fallback = chris_voice("presenter", speed=1.0)
 
     def register(self, profile: VoiceProfile) -> None:
@@ -146,11 +148,11 @@ class VoiceRegistry:
     def for_persona(self, persona_id: str) -> VoiceProfile:
         return self.voices.get(persona_id, self.fallback)
 
-    def chris_clip_path(self) -> str | None:
+    def chris_clip_path(self) -> Optional[str]:
         """The reference clip pinning the station's voice, if it exists."""
         return _CHRIS_CLIP if os.path.exists(_CHRIS_CLIP) else None
 
-    def delivery_is_varied(self, persona_ids: list[str]) -> bool:
+    def delivery_is_varied(self, persona_ids: List[str]) -> bool:
         """Whether the personas differ in delivery (pace or demeanor).
 
         Delivery variety keeps the debate readable; the voice itself stays
@@ -161,7 +163,7 @@ class VoiceRegistry:
         demeanors = {p.instruct for p in profiles if p.instruct}
         return len(speeds) > 1 or len(demeanors) > 1
 
-    def all_use_chris_voice(self, persona_ids: list[str]) -> bool:
+    def all_use_chris_voice(self, persona_ids: List[str]) -> bool:
         """Whether every persona is pinned to the same reference clip.
 
         The consistency guarantee: one voice for the whole station.

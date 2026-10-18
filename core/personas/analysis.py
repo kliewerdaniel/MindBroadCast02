@@ -17,14 +17,12 @@ the evidence supports a straightforward conclusion, and do not force consensus
 when the issue remains unresolved.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .entities import (
-    Disagreement,
-    DisagreementType,
-    PersonaAnalysis,
-    PersonaConfig,
+    Disagreement, DisagreementType, PersonaAnalysis, PersonaConfig,
     ResolutionStatus,
 )
 
@@ -39,9 +37,9 @@ class SharedEvidencePacket:
     """
     id: str = ""
     question: str = ""
-    facts: list[str] = field(default_factory=list)
-    evidence_references: list[str] = field(default_factory=list)
-    contradictory_evidence: list[str] = field(default_factory=list)
+    facts: List[str] = field(default_factory=list)
+    evidence_references: List[str] = field(default_factory=list)
+    contradictory_evidence: List[str] = field(default_factory=list)
     world_snapshot_id: str = ""
 
     @property
@@ -61,7 +59,7 @@ class IndependentAnalysisRunner:
     Each function receives only the shared packet.
     """
 
-    def __init__(self, analysis_functions: dict[str, AnalysisFunction] | None = None):
+    def __init__(self, analysis_functions: Optional[Dict[str, AnalysisFunction]] = None):
         self.analysis_functions = analysis_functions or {}
 
     def register(self, persona_id: str, function: AnalysisFunction) -> None:
@@ -69,11 +67,11 @@ class IndependentAnalysisRunner:
 
     def run_first_passes(
         self,
-        personas: list[PersonaConfig],
+        personas: List[PersonaConfig],
         packet: SharedEvidencePacket,
-    ) -> list[PersonaAnalysis]:
+    ) -> List[PersonaAnalysis]:
         """Produce every first pass. None may reference another's output."""
-        analyses: list[PersonaAnalysis] = []
+        analyses: List[PersonaAnalysis] = []
         for persona in personas:
             function = self.analysis_functions.get(persona.id)
             if function is None:
@@ -121,11 +119,11 @@ class DisagreementDetector:
 
     def detect(
         self,
-        analyses: list[PersonaAnalysis],
+        analyses: List[PersonaAnalysis],
         packet: SharedEvidencePacket,
-    ) -> list[Disagreement]:
+    ) -> List[Disagreement]:
         """Compare each pair of analyses against the shared baseline."""
-        disagreements: list[Disagreement] = []
+        disagreements: List[Disagreement] = []
         for i, first in enumerate(analyses):
             for second in analyses[i + 1:]:
                 found = self._compare(first, second, packet)
@@ -137,8 +135,8 @@ class DisagreementDetector:
         a: PersonaAnalysis,
         b: PersonaAnalysis,
         packet: SharedEvidencePacket,
-    ) -> list[Disagreement]:
-        results: list[Disagreement] = []
+    ) -> List[Disagreement]:
+        results: List[Disagreement] = []
 
         if not a.position or not b.position:
             return results
@@ -215,7 +213,7 @@ class DisagreementDetector:
 
     def _classify(
         self, a: PersonaAnalysis, b: PersonaAnalysis,
-        disputed: list[str],
+        disputed: List[str],
     ) -> DisagreementType:
         """Classify by what actually differs.
 
@@ -244,7 +242,7 @@ class DisagreementGuard:
     def should_suppress(
         self,
         packet: SharedEvidencePacket,
-        analyses: list[PersonaAnalysis],
+        analyses: List[PersonaAnalysis],
     ) -> bool:
         """True when the evidence supports one conclusion and manufactured
         disagreement would be noise.
@@ -282,8 +280,8 @@ class DisagreementGuard:
         return not detector.detect(analyses, packet)
 
     def must_not_force_consensus(
-        self, disagreements: list[Disagreement]
-    ) -> list[Disagreement]:
+        self, disagreements: List[Disagreement]
+    ) -> List[Disagreement]:
         """Return the disagreements that remain unresolved.
 
         A disagreement is only closed by evidence. A dialogue that ends with

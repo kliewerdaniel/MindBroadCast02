@@ -17,18 +17,13 @@ unsupported allegation is not, however polished its prose.
 """
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from .entities import (
-    BroadcastScript,
-    EpistemicFunction,
-    Severity,
-    SpeechAct,
-    ValidationOutcome,
-    ValidationStage,
+    BroadcastScript, EpistemicFunction, ScriptTurn, Severity,
+    SpeechAct, ValidationOutcome, ValidationStage,
 )
 
 
@@ -37,9 +32,9 @@ class StageFinding:
     stage: ValidationStage
     severity: Severity
     message: str
-    turn_id: str | None = None
+    turn_id: Optional[str] = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "stage": self.stage.value,
             "severity": self.severity.value,
@@ -51,10 +46,10 @@ class StageFinding:
 @dataclass
 class ValidationReport:
     outcome: ValidationOutcome
-    findings: list[StageFinding] = field(default_factory=list)
-    qualifications: list[str] = field(default_factory=list)
-    stages_run: list[int] = field(default_factory=list)
-    validated_at: datetime | None = None
+    findings: List[StageFinding] = field(default_factory=list)
+    qualifications: List[str] = field(default_factory=list)
+    stages_run: List[int] = field(default_factory=list)
+    validated_at: Optional[datetime] = None
 
     @property
     def is_approved(self) -> bool:
@@ -64,11 +59,11 @@ class ValidationReport:
         )
 
     @property
-    def fatal_findings(self) -> list[StageFinding]:
+    def fatal_findings(self) -> List[StageFinding]:
         return [f for f in self.findings if f.severity is Severity.FATAL]
 
     @property
-    def error_findings(self) -> list[StageFinding]:
+    def error_findings(self) -> List[StageFinding]:
         return [f for f in self.findings if f.severity is Severity.ERROR]
 
 
@@ -77,16 +72,16 @@ class ValidationReport:
 
 def validate_structural(
     script: BroadcastScript,
-    known_claim_ids: set[str] | None = None,
+    known_claim_ids: Optional[Set[str]] = None,
     max_turns: int = 24,
     min_turn_length: int = 3,
-) -> list[StageFinding]:
+) -> List[StageFinding]:
     """§15.4 stage 1. Schema, valid references, length and formatting.
 
     Empty or whitespace-only turns, duplicate sequence numbers, and
     over-length scripts fail here before any semantic review.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     if not script.turns:
         findings.append(StageFinding(
             ValidationStage.STRUCTURAL, Severity.ERROR,
@@ -133,8 +128,8 @@ def validate_structural(
 
 def validate_provenance(
     script: BroadcastScript,
-    claim_supports: dict[str, list[str]] | None = None,
-) -> list[StageFinding]:
+    claim_supports: Optional[Dict[str, List[str]]] = None,
+) -> List[StageFinding]:
     """§15.4 stage 2 and §15.3.
 
     The rule §15.3 states explicitly: "A script should not be approved merely
@@ -145,7 +140,7 @@ def validate_provenance(
     `claim_supports` maps a claim id to the evidence ids that support it. A
     factual turn whose claim has no supporting evidence fails.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     claim_supports = claim_supports or {}
 
     for turn in script.turns:
@@ -181,14 +176,14 @@ def validate_provenance(
 
 
 # A verifier receives the script and returns findings. Optional by design.
-ContradictionVerifier = Callable[[BroadcastScript], list[StageFinding]]
+ContradictionVerifier = Callable[[BroadcastScript], List[StageFinding]]
 
 
 def validate_contradiction(
     script: BroadcastScript,
-    contradicting_claim_texts: list[str] | None = None,
-    verifier: ContradictionVerifier | None = None,
-) -> list[StageFinding]:
+    contradicting_claim_texts: Optional[List[str]] = None,
+    verifier: Optional[ContradictionVerifier] = None,
+) -> List[StageFinding]:
     """§15.4 stage 3. Conflict with material evidence or an omitted
     critical qualification.
 
@@ -198,7 +193,7 @@ def validate_contradiction(
     contradiction needs a verifier; without one it is not caught, and that is
     recorded as a known gap rather than claimed as coverage.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     script_text = " ".join(t.text for t in script.turns).lower()
 
     for text in contradicting_claim_texts or []:
@@ -237,14 +232,14 @@ ATTRIBUTION_MARKERS = (
 )
 
 
-def validate_attribution(script: BroadcastScript) -> list[StageFinding]:
+def validate_attribution(script: BroadcastScript) -> List[StageFinding]:
     """§15.4 stage 4. Attributed statements stay attributed.
 
     §5.6.1 and ADR-021 established this in the compiler: "Officials said 40
     died" is hearsay, not a measurement. The same discipline applies to what
     gets spoken.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     for turn in script.turns:
         if turn.speech_act != ATTRIBUTED_ACT:
             continue
@@ -276,14 +271,14 @@ QUALIFICATION_MARKERS = (
 
 def validate_epistemic_consistency(
     script: BroadcastScript,
-    verifier: Callable[[BroadcastScript], list[StageFinding]] | None = None,
-) -> list[StageFinding]:
+    verifier: Optional[Callable[[BroadcastScript], List[StageFinding]]] = None,
+) -> List[StageFinding]:
     """§15.4 stage 5. Speculation is presented with appropriate qualification.
 
     Deterministic check: a prediction or interpretive turn with no hedging
     language and no uncertainty marker is stating speculation as fact.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     for turn in script.turns:
         if turn.speech_act not in SPECULATIVE_ACTS:
             continue
@@ -320,15 +315,15 @@ STALENESS_MARKERS = (
 
 def validate_temporal(
     script: BroadcastScript,
-    superseded_claim_texts: list[str] | None = None,
-    as_of: datetime | None = None,
-) -> list[StageFinding]:
+    superseded_claim_texts: Optional[List[str]] = None,
+    as_of: Optional[datetime] = None,
+) -> List[StageFinding]:
     """§15.4 stage 6. Outdated information must not be presented as current
     when a newer material development has been recorded.
 
     This is a rule-based check, one of the independent mechanisms §15.6 lists.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     script_text = " ".join(t.text for t in script.turns).lower()
 
     for text in superseded_claim_texts or []:
@@ -367,7 +362,7 @@ HIGH_IMPACT_ALLEGATION_MARKERS = (
 )
 
 
-def validate_safety_privacy(script: BroadcastScript) -> list[StageFinding]:
+def validate_safety_privacy(script: BroadcastScript) -> List[StageFinding]:
     """§15.4 stage 7. Prohibited disclosures, unsupported high-impact
     allegations, and content needing additional restriction.
 
@@ -375,7 +370,7 @@ def validate_safety_privacy(script: BroadcastScript) -> list[StageFinding]:
     reference is FATAL. §15.5: a segment that makes an unsupported allegation
     should not pass simply because its prose is polished.
     """
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     for turn in script.turns:
         text = turn.text
         lowered = text.lower()
@@ -387,7 +382,8 @@ def validate_safety_privacy(script: BroadcastScript) -> list[StageFinding]:
                     f"potential prohibited disclosure: matched {pattern!r}",
                     turn.id))
 
-        if any(m in lowered for m in HIGH_IMPACT_ALLEGATION_MARKERS) and not turn.claim_references or not turn.evidence_references:
+        if any(m in lowered for m in HIGH_IMPACT_ALLEGATION_MARKERS):
+            if not turn.claim_references or not turn.evidence_references:
                 findings.append(StageFinding(
                     ValidationStage.SAFETY_PRIVACY, Severity.FATAL,
                     "high-impact allegation without supporting evidence",
@@ -404,11 +400,11 @@ MIN_TURN_DURATION_MS = 500
 
 def validate_delivery(
     script: BroadcastScript,
-    known_voice_profile_ids: set[str] | None = None,
-    turn_durations: dict[str, int] | None = None,
-) -> list[StageFinding]:
+    known_voice_profile_ids: Optional[Set[str]] = None,
+    turn_durations: Optional[Dict[str, int]] = None,
+) -> List[StageFinding]:
     """§15.4 stage 8. Estimated duration, speaker, TTS compatibility."""
-    findings: list[StageFinding] = []
+    findings: List[StageFinding] = []
     turn_durations = turn_durations or {}
 
     if not script.turns:
@@ -421,7 +417,8 @@ def validate_delivery(
                 "turn has no speaker assignment", turn.id))
 
         duration = turn.expected_duration_ms or turn_durations.get(turn.id)
-        if duration is not None and duration > MAX_TURN_DURATION_MS:
+        if duration is not None:
+            if duration > MAX_TURN_DURATION_MS:
                 findings.append(StageFinding(
                     ValidationStage.DELIVERY, Severity.ERROR,
                     f"turn duration {duration}ms exceeds "
@@ -462,14 +459,14 @@ class ScriptValidator:
 
     def __init__(
         self,
-        known_claim_ids: set[str] | None = None,
-        claim_supports: dict[str, list[str]] | None = None,
-        contradicting_claim_texts: list[str] | None = None,
-        superseded_claim_texts: list[str] | None = None,
-        known_voice_profile_ids: set[str] | None = None,
-        contradiction_verifier: ContradictionVerifier | None = None,
-        epistemic_verifier: Any | None = None,
-        as_of: datetime | None = None,
+        known_claim_ids: Optional[Set[str]] = None,
+        claim_supports: Optional[Dict[str, List[str]]] = None,
+        contradicting_claim_texts: Optional[List[str]] = None,
+        superseded_claim_texts: Optional[List[str]] = None,
+        known_voice_profile_ids: Optional[Set[str]] = None,
+        contradiction_verifier: Optional[ContradictionVerifier] = None,
+        epistemic_verifier: Optional[Any] = None,
+        as_of: Optional[datetime] = None,
         require_all_stages: bool = True,
     ):
         self.known_claim_ids = known_claim_ids
@@ -483,10 +480,10 @@ class ScriptValidator:
         self.require_all_stages = require_all_stages
 
     def validate(self, script: BroadcastScript) -> ValidationReport:
-        findings: list[StageFinding] = []
-        stages_run: list[int] = []
+        findings: List[StageFinding] = []
+        stages_run: List[int] = []
 
-        stage_functions: list[tuple[ValidationStage, Any]] = [
+        stage_functions: List[Tuple[ValidationStage, Any]] = [
             (ValidationStage.STRUCTURAL,
              lambda: validate_structural(script, self.known_claim_ids)),
             (ValidationStage.PROVENANCE,
@@ -528,11 +525,11 @@ class ScriptValidator:
             findings=findings,
             qualifications=qualifications,
             stages_run=stages_run,
-            validated_at=datetime.now(UTC),
+            validated_at=datetime.now(timezone.utc),
         )
 
     def _decide(
-        self, findings: list[StageFinding], stages_run: list[int]
+        self, findings: List[StageFinding], stages_run: List[int]
     ) -> ValidationOutcome:
         """§15.5. Recoverable problems and unspeakable content are different.
 

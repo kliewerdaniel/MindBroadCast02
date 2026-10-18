@@ -6,18 +6,14 @@ Gate 1: persistence and migrations are reliable. Spec §5.1, §6.1, §6.7, §24.
 import asyncio
 import os
 import sqlite3
-
 import pytest
 
-from core.lifecycle import Lifecycle, RecoveryError, RecoveryIssue
+from core.models import Source, SourceType, Article, Story, Claim, ClaimType
+from core.persistence import Database, WorldStore, PersistenceError, SCHEMA_VERSION
 from core.migrations import (
-    Migration,
-    MigrationError,
-    MigrationRunner,
-    default_migrations,
+    MigrationRunner, Migration, MigrationError, default_migrations,
 )
-from core.models import Source, Story
-from core.persistence import Database, WorldStore
+from core.lifecycle import Lifecycle, RecoveryError, RecoveryIssue
 
 
 def run(coro):
@@ -286,7 +282,7 @@ class TestLifecycleRecovery:
     def test_recovery_detects_missing_snapshot_artifact(self, db_path, tmp_path):
         artifact_dir = str(tmp_path / "snapshots")
         with Lifecycle(db_path) as lifecycle:
-            run(lifecycle.store.add_story(Story(canonical_title="S")))
+            story_id = run(lifecycle.store.add_story(Story(canonical_title="S")))
             snapshot = run(lifecycle.store.create_snapshot(
                 artifact_dir=artifact_dir))
             reference = snapshot.state_reference

@@ -16,9 +16,9 @@ to attach where it occurs.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional, Set
 
 
 class ChangeKind(Enum):
@@ -38,7 +38,7 @@ class ChangeKind(Enum):
 # Relative significance weights. These are tunable parameters, not universal
 # constants (§10.3) — the default is equal weighting, and every decision
 # records the weight set used so a later change is auditable.
-DEFAULT_WEIGHTS: dict[ChangeKind, float] = {
+DEFAULT_WEIGHTS: Dict[ChangeKind, float] = {
     ChangeKind.NEW_EVENT: 1.0,
     ChangeKind.CONFIRMED_DECISION: 1.0,
     ChangeKind.NEW_MEASUREMENT: 0.8,
@@ -58,9 +58,9 @@ class MaterialChange:
     significance: float
     occurred_at: datetime
     detail: str = ""
-    subject_id: str | None = None      # claim / event / entity this concerns
-    evidence_id: str | None = None
-    supersedes: str | None = None
+    subject_id: Optional[str] = None      # claim / event / entity this concerns
+    evidence_id: Optional[str] = None
+    supersedes: Optional[str] = None
 
     @property
     def is_material(self) -> bool:
@@ -69,9 +69,9 @@ class MaterialChange:
 
 @dataclass
 class ChangeReport:
-    changes: list[MaterialChange] = field(default_factory=list)
+    changes: List[MaterialChange] = field(default_factory=list)
     evaluated_at: datetime = field(
-        default_factory=lambda: datetime.now(UTC))
+        default_factory=lambda: datetime.now(timezone.utc))
     article_count: int = 0
 
     @property
@@ -82,7 +82,7 @@ class ChangeReport:
     def total_significance(self) -> float:
         return sum(c.significance for c in self.changes if c.is_material)
 
-    def by_kind(self, kind: ChangeKind) -> list[MaterialChange]:
+    def by_kind(self, kind: ChangeKind) -> List[MaterialChange]:
         return [c for c in self.changes if c.kind is kind]
 
 
@@ -93,27 +93,27 @@ class KnownState:
     This is the "existing world model" that §10.3 says novelty must be
     measured against — not the article text.
     """
-    claim_ids: set[str] = field(default_factory=set)
-    claim_texts: dict[str, str] = field(default_factory=dict)
-    event_ids: set[str] = field(default_factory=set)
-    evidence_ids: set[str] = field(default_factory=set)
-    entity_names: set[str] = field(default_factory=set)
-    quantities: set[str] = field(default_factory=set)   # "value:unit" keys
-    open_question_ids: set[str] = field(default_factory=set)
-    corrected_claim_ids: set[str] = field(default_factory=set)
-    last_material_update_at: datetime | None = None
+    claim_ids: Set[str] = field(default_factory=set)
+    claim_texts: Dict[str, str] = field(default_factory=dict)
+    event_ids: Set[str] = field(default_factory=set)
+    evidence_ids: Set[str] = field(default_factory=set)
+    entity_names: Set[str] = field(default_factory=set)
+    quantities: Set[str] = field(default_factory=set)   # "value:unit" keys
+    open_question_ids: Set[str] = field(default_factory=set)
+    corrected_claim_ids: Set[str] = field(default_factory=set)
+    last_material_update_at: Optional[datetime] = None
 
 
 @dataclass
 class IncomingState:
     """What a new compilation contributes."""
     article_id: str = ""
-    claims: list[dict[str, Any]] = field(default_factory=list)
-    events: list[dict[str, Any]] = field(default_factory=list)
-    evidence: list[dict[str, Any]] = field(default_factory=list)
-    entities: list[str] = field(default_factory=list)
-    corrections: list[dict[str, Any]] = field(default_factory=list)
-    observed_at: datetime | None = None
+    claims: List[Dict[str, Any]] = field(default_factory=list)
+    events: List[Dict[str, Any]] = field(default_factory=list)
+    evidence: List[Dict[str, Any]] = field(default_factory=list)
+    entities: List[str] = field(default_factory=list)
+    corrections: List[Dict[str, Any]] = field(default_factory=list)
+    observed_at: Optional[datetime] = None
 
 
 class ChangeDetector:
@@ -124,13 +124,13 @@ class ChangeDetector:
     a transaction.
     """
 
-    def __init__(self, weights: dict[ChangeKind, float] | None = None):
+    def __init__(self, weights: Optional[Dict[ChangeKind, float]] = None):
         self.weights = weights or dict(DEFAULT_WEIGHTS)
 
     def detect(self, known: KnownState,
                incoming: IncomingState) -> ChangeReport:
         report = ChangeReport(article_count=1)
-        observed = incoming.observed_at or datetime.now(UTC)
+        observed = incoming.observed_at or datetime.now(timezone.utc)
 
         # A completely new event.
         for event in incoming.events:
@@ -145,7 +145,7 @@ class ChangeDetector:
                 ))
 
         # New claims, and whether they revise a previously reported number.
-        incoming_quantities: set[str] = set()
+        incoming_quantities: Set[str] = set()
         for claim in incoming.claims:
             claim_id = claim.get("id")
             text = claim.get("proposition", "")

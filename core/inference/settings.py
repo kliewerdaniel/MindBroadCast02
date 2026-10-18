@@ -18,7 +18,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 
 def _default_data_dir() -> Path:
@@ -56,12 +56,12 @@ class StationSettings:
     #: Per-cycle ceiling on articles compiled (each is an LLM pass).
     max_compile_per_cycle: int = 8
     #: Regions to include from the world registry. Empty means all.
-    regions: list[str] = field(default_factory=list)
+    regions: List[str] = field(default_factory=list)
     #: Preserved unknown keys, so a newer version's settings are not dropped.
-    extra: dict[str, Any] = field(default_factory=dict)
+    extra: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any] | None) -> "StationSettings":
+    def from_mapping(cls, data: Optional[Dict[str, Any]]) -> "StationSettings":
         data = data or {}
         known = {"poll_seconds", "use_world_feeds", "multi_persona",
                  "max_compile_per_cycle", "regions"}
@@ -94,7 +94,7 @@ class StationSettings:
             extra={k: v for k, v in data.items() if k not in known},
         )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         base = {k: v for k, v in asdict(self).items() if k != "extra"}
         base.update(self.extra)
         return base
@@ -103,7 +103,7 @@ class StationSettings:
 class SettingsStore:
     """Load and save StationSettings, tolerating every kind of bad input."""
 
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Optional[Path] = None):
         self.path = Path(path) if path else _default_data_dir() / "settings.json"
 
     def load(self) -> StationSettings:

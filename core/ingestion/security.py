@@ -17,7 +17,8 @@ import ipaddress
 import socket
 from dataclasses import dataclass, field
 from enum import Enum
-from urllib.parse import urljoin, urlparse
+from typing import List, Optional, Tuple
+from urllib.parse import urlparse, urljoin
 
 
 class URLRejection(Enum):
@@ -88,7 +89,7 @@ class FetchLimits:
         default_factory=lambda: ALLOWED_SCHEMES)
 
 
-def _classify_address(ip_text: str) -> URLRejection | None:
+def _classify_address(ip_text: str) -> Optional[URLRejection]:
     """Return the rejection reason for an IP, or None if it is permitted."""
     try:
         address = ipaddress.ip_address(ip_text)
@@ -112,7 +113,7 @@ def _classify_address(ip_text: str) -> URLRejection | None:
     return None
 
 
-def _resolve_host(host: str) -> list[str]:
+def _resolve_host(host: str) -> List[str]:
     """Resolve a hostname to IP addresses. Empty list if unresolvable."""
     # A literal IP needs no resolution.
     try:
@@ -122,12 +123,12 @@ def _resolve_host(host: str) -> list[str]:
         pass
     try:
         infos = socket.getaddrinfo(host, None)
-    except (TimeoutError, socket.gaierror, UnicodeError):
+    except (socket.gaierror, socket.timeout, UnicodeError):
         return []
     return sorted({str(info[4][0]) for info in infos})
 
 
-def validate_url(url: str, limits: FetchLimits | None = None,
+def validate_url(url: str, limits: Optional[FetchLimits] = None,
                  resolve: bool = True) -> None:
     """Validate a fetch target. Raises SecurityViolation if not permitted.
 
@@ -179,7 +180,7 @@ def validate_url(url: str, limits: FetchLimits | None = None,
 
 
 def validate_redirect(
-    current_url: str, location: str, limits: FetchLimits | None = None,
+    current_url: str, location: str, limits: Optional[FetchLimits] = None,
     hops: int = 0, resolve: bool = True,
 ) -> str:
     """Resolve and validate a redirect target.
@@ -204,7 +205,7 @@ def is_redirect(status_code: int) -> bool:
     return status_code in (301, 302, 303, 307, 308)
 
 
-def redirect_target(status_code: int, location: str | None) -> str | None:
+def redirect_target(status_code: int, location: Optional[str]) -> Optional[str]:
     """The Location header for a redirect response, or None."""
     if not is_redirect(status_code) or not location:
         return None
@@ -212,7 +213,7 @@ def redirect_target(status_code: int, location: str | None) -> str | None:
 
 
 def enforce_response_size(
-    declared_length: int | None, limits: FetchLimits | None = None
+    declared_length: Optional[int], limits: Optional[FetchLimits] = None
 ) -> None:
     """Reject a response whose declared length exceeds the cap."""
     limits = limits or FetchLimits()

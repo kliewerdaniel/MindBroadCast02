@@ -10,58 +10,35 @@ TestSecurityPolicy, where it belongs.
 """
 
 import asyncio
-from datetime import UTC, datetime
-
 import pytest
+from datetime import datetime, timezone
 
-from core.ingestion.adapters import (
-    AdapterError,
-    FeedAdapter,
-    make_adapter,
+from core.models import Source, SourceType, Article, ExtractionStatus
+from core.persistence import WorldStore, PersistenceError
+from core.ingestion.security import (
+    validate_url, validate_redirect, SecurityViolation, URLRejection,
+    FetchLimits, FetchError, strip_active_content, looks_like_injection,
+    classify_http_error, enforce_response_size, is_redirect,
 )
 from core.ingestion.canonicalization import (
-    CanonicalizationPolicy,
-    Rule,
-    canonicalize_url,
-    content_hash,
-    normalize_text,
-    text_similarity,
+    canonicalize_url, CanonicalizationPolicy, normalize_text, content_hash,
+    text_similarity, Rule,
 )
 from core.ingestion.deduplication import (
-    DeduplicationPolicy,
-    Deduplicator,
-    DuplicateKind,
-    ExistingArticle,
+    Deduplicator, DeduplicationPolicy, ExistingArticle, DuplicateKind,
     detect_syndication_group,
 )
-from core.ingestion.fetcher import Fetcher, StubTransport
-from core.ingestion.pipeline import (
-    IngestionPipeline,
-)
 from core.ingestion.scheduler import (
-    BackoffPolicy,
-    SchedulerPolicy,
-    SourcePollState,
-    decide_under_backpressure,
-    is_due,
-    next_attempt_time,
-    select_due_sources,
+    SourcePollState, BackoffPolicy, SchedulerPolicy, is_due,
+    select_due_sources, decide_under_backpressure, next_attempt_time,
 )
-from core.ingestion.security import (
-    FetchError,
-    FetchLimits,
-    SecurityViolation,
-    URLRejection,
-    classify_http_error,
-    enforce_response_size,
-    is_redirect,
-    looks_like_injection,
-    strip_active_content,
-    validate_redirect,
-    validate_url,
+from core.ingestion.fetcher import Fetcher, StubTransport
+from core.ingestion.adapters import (
+    FeedAdapter, AdapterError, NormalizedEntry, make_adapter,
 )
-from core.models import Source, SourceType
-from core.persistence import WorldStore
+from core.ingestion.pipeline import (
+    IngestionPipeline, IngestionPolicy, IngestDisposition,
+)
 
 
 def run(coro):
@@ -453,7 +430,7 @@ class TestBackoff:
 
 
 class TestScheduler:
-    NOW = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
+    NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 
     def _policy(self):
         return SchedulerPolicy(backoff=BackoffPolicy(jitter_fraction=0.0))
@@ -790,7 +767,7 @@ class TestPipelineBehaviour:
                                  body=ORIGINAL)))
         run(first.ingest_source(source))
 
-        Source(name="Other", endpoint="https://w.example/feed")
+        other = Source(name="Other", endpoint="https://w.example/feed")
         # Same content, different source id, different URL.
         transport = StubTransport().add(
             "https://w.example/feed", 200,

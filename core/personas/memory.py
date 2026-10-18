@@ -19,19 +19,19 @@ principled.
 """
 
 from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 
 from .entities import (
-    MemoryType,
-    MemoryValidity,
-    PersonaConfig,
-    PersonaMemoryEntry,
+    MemoryType, MemoryValidity, PersonaConfig, PersonaMemoryEntry,
 )
+
 
 # Tunable bounds. §12.6 requires bounded; these are the chosen bounds.
 DEFAULT_MAX_PER_TYPE = 200
 DEFAULT_CONTEXT_LINE_BUDGET = 20          # lines entering a prompt
-DEFAULT_MAX_AGE_DAYS: int | None = 365
+DEFAULT_MAX_AGE_DAYS: Optional[int] = 365
 
 
 class MemoryStore:
@@ -41,12 +41,12 @@ class MemoryStore:
         self,
         max_per_type: int = DEFAULT_MAX_PER_TYPE,
         context_line_budget: int = DEFAULT_CONTEXT_LINE_BUDGET,
-        max_age_days: int | None = DEFAULT_MAX_AGE_DAYS,
+        max_age_days: Optional[int] = DEFAULT_MAX_AGE_DAYS,
     ):
         self.max_per_type = max_per_type
         self.context_line_budget = context_line_budget
         self.max_age_days = max_age_days
-        self._entries: dict[tuple[str, MemoryType], list[PersonaMemoryEntry]] = (
+        self._entries: Dict[Tuple[str, MemoryType], List[PersonaMemoryEntry]] = (
             defaultdict(list))
 
     # ── write ─────────────────────────────────────────────────────────
@@ -57,11 +57,11 @@ class MemoryStore:
         memory_type: MemoryType,
         content: str,
         provenance: str = "",
-        source_segment_id: str | None = None,
-        evidence_references: list[str] | None = None,
+        source_segment_id: Optional[str] = None,
+        evidence_references: Optional[List[str]] = None,
         confidence: float = 0.5,
-        revises_entry_id: str | None = None,
-        now: datetime | None = None,
+        revises_entry_id: Optional[str] = None,
+        now: Optional[datetime] = None,
     ) -> PersonaMemoryEntry:
         entry = PersonaMemoryEntry(
             persona_id=persona_id,
@@ -91,7 +91,7 @@ class MemoryStore:
 
     def _enforce_bound(
         self, persona_id: str, memory_type: MemoryType,
-        now: datetime | None = None,
+        now: Optional[datetime] = None,
     ) -> None:
         """Bound active entries per type.
 
@@ -120,10 +120,10 @@ class MemoryStore:
     def recall(
         self,
         persona_id: str,
-        memory_type: MemoryType | None = None,
+        memory_type: Optional[MemoryType] = None,
         active_only: bool = True,
-    ) -> list[PersonaMemoryEntry]:
-        results: list[PersonaMemoryEntry] = []
+    ) -> List[PersonaMemoryEntry]:
+        results: List[PersonaMemoryEntry] = []
         for (pid, mtype), entries in self._entries.items():
             if pid != persona_id:
                 continue
@@ -137,8 +137,8 @@ class MemoryStore:
         return results
 
     def context_lines(self, persona_id: str,
-                      memory_types: list[MemoryType] | None = None
-                      ) -> list[str]:
+                      memory_types: Optional[List[MemoryType]] = None
+                      ) -> List[str]:
         """§12.6: bounded memory entering context.
 
         Priority order: CORRECTION (a withdrawn position must be visible),
@@ -155,7 +155,7 @@ class MemoryStore:
         if memory_types:
             priority = [m for m in priority if m in memory_types]
 
-        lines: list[str] = []
+        lines: List[str] = []
         for memory_type in priority:
             entries = self.recall(persona_id, memory_type)
             entries = list(reversed(entries))       # most recent first
@@ -166,7 +166,7 @@ class MemoryStore:
         return lines[:self.context_line_budget]
 
     def history_of(self, persona_id: str,
-                   proposition: str) -> list[PersonaMemoryEntry]:
+                   proposition: str) -> List[PersonaMemoryEntry]:
         """Every entry bearing on a proposition, including withdrawn ones.
 
         §12.6: a persona should be able to recall that it previously argued
@@ -184,12 +184,12 @@ class MemoryStore:
         results.sort(key=lambda e: e.created_at)
         return results
 
-    def revisions_of(self, entry_id: str) -> list[PersonaMemoryEntry]:
+    def revisions_of(self, entry_id: str) -> List[PersonaMemoryEntry]:
         return [e for entries in self._entries.values() for e in entries
                 if e.revises_entry_id == entry_id]
 
     def count(self, persona_id: str,
-              memory_type: MemoryType | None = None) -> int:
+              memory_type: Optional[MemoryType] = None) -> int:
         return len(self.recall(persona_id, memory_type, active_only=False))
 
 
@@ -197,15 +197,15 @@ class PersonaRegistry:
     """Versioned persona configurations (§12.2)."""
 
     def __init__(self):
-        self._current: dict[str, PersonaConfig] = {}
-        self._history: dict[str, list[PersonaConfig]] = {}
+        self._current: Dict[str, PersonaConfig] = {}
+        self._history: Dict[str, List[PersonaConfig]] = {}
 
     def register(self, config: PersonaConfig) -> PersonaConfig:
         self._current[config.id] = config
         self._history.setdefault(config.id, []).append(config)
         return config
 
-    def get(self, persona_id: str) -> PersonaConfig | None:
+    def get(self, persona_id: str) -> Optional[PersonaConfig]:
         return self._current.get(persona_id)
 
     def update(self, persona_id: str, **changes) -> PersonaConfig:
@@ -218,15 +218,15 @@ class PersonaRegistry:
         self._history.setdefault(persona_id, []).append(revised)
         return revised
 
-    def versions(self, persona_id: str) -> list[PersonaConfig]:
+    def versions(self, persona_id: str) -> List[PersonaConfig]:
         return list(self._history.get(persona_id, []))
 
     def version_at(self, persona_id: str,
-                   version: int) -> PersonaConfig | None:
+                   version: int) -> Optional[PersonaConfig]:
         for config in self._history.get(persona_id, []):
             if config.configuration_version == version:
                 return config
         return None
 
-    def enabled(self) -> list[PersonaConfig]:
+    def enabled(self) -> List[PersonaConfig]:
         return [c for c in self._current.values() if c.enabled]

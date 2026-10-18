@@ -14,75 +14,44 @@ polished, delivering chunks from an abandoned generation, and letting a
 correction overwrite the original transcript.
 """
 
-from datetime import UTC, datetime, timedelta
-
 import pytest
+from datetime import datetime, timezone, timedelta
 
-from core.broadcast.audio import (
-    CANONICAL_FORMAT,
-    AudioBuffer,
-    BufferFull,
-    OutOfOrderChunk,
-    StaleChunk,
-    chunk_text,
-    needs_normalization,
-    normalize_chunk,
-)
-from core.broadcast.context import (
-    ContextBuilder,
-    EvidencePacket,
-    GenerationOrchestrator,
-    UntrustedContentGuard,
-)
-from core.broadcast.correction import (
-    CorrectionEngine,
-    CorrectionWorkflow,
-    TranscriptArchive,
-)
-from core.broadcast.director import (
-    BroadcastDirector,
-    InvalidState,
-    SegmentNotFound,
-)
 from core.broadcast.entities import (
-    SEGMENT_TRANSITIONS,
-    AudioArtifact,
-    AudioChunk,
-    BroadcastScript,
-    ContentState,
-    EpistemicFunction,
-    GenerationRequest,
-    InterruptionAction,
-    ScriptTurn,
-    Segment,
-    SegmentStatus,
-    SegmentTransitionError,
-    Severity,
-    SpeechAct,
-    ValidationOutcome,
-    ValidationStage,
+    AudioArtifact, AudioChunk, BroadcastSession, BroadcastScript,
+    ContentState, EpistemicFunction, GenerationRequest, InterruptionAction,
+    Persona, PlaybackState, ScriptTurn, Segment, SegmentStatus,
+    SegmentTransitionError, SEGMENT_TRANSITIONS, Severity, SpeechAct,
+    ValidationOutcome, ValidationStage, VoiceProfile,
 )
 from core.broadcast.providers import (
-    TASK_CAPABILITY_MAP,
-    StubLanguageModelProvider,
-    StubTTSProvider,
-    UnsupportedCapability,
-    route_task,
+    ProviderCapabilities, ProviderError, ProviderUnavailable,
+    RouteDecision, StubLanguageModelProvider, StubTTSProvider, SynthesisRequest,
+    SynthesisResult, TASK_CAPABILITY_MAP, UnsupportedCapability, route_task,
+)
+from core.broadcast.context import (
+    ContextBuilder, EvidencePacket, GenerationOrchestrator,
+    INJECTION_PATTERNS, InjectionFinding, UntrustedContentGuard,
 )
 from core.broadcast.validation import (
-    ScriptValidator,
-    StageFinding,
-    validate_attribution,
-    validate_contradiction,
-    validate_delivery,
-    validate_epistemic_consistency,
-    validate_provenance,
-    validate_safety_privacy,
-    validate_structural,
+    ScriptValidator, StageFinding, ValidationReport, validate_attribution,
+    validate_contradiction, validate_delivery, validate_epistemic_consistency,
+    validate_provenance, validate_safety_privacy, validate_structural,
     validate_temporal,
 )
+from core.broadcast.director import (
+    BroadcastDirector, DirectorError, Interruption, InvalidState,
+    SegmentNotFound,
+)
+from core.broadcast.audio import (
+    AudioBuffer, BufferFull, CANONICAL_FORMAT, OutOfOrderChunk, StaleChunk,
+    chunk_text, needs_normalization, normalize_chunk,
+)
+from core.broadcast.correction import (
+    CorrectionEngine, CorrectionWorkflow, TranscriptArchive,
+)
 
-NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
 
 
 def turn(text, speech_act=SpeechAct.FACTUAL_REPORT, claims=None,
@@ -212,7 +181,7 @@ class TestContentStateDistinctions:
 
     def test_delivery_does_not_imply_consumption(self):
         """A server cannot infer a listener heard a segment."""
-        segment()
+        s = segment()
         assert ContentState.DELIVERED != ContentState.CONSUMED
 
     def test_playback_marks_delivered_not_consumed(self):
@@ -501,6 +470,7 @@ class TestIndependentVerification:
         assert report
 
     def test_verifier_output_is_incorporated_when_supplied(self):
+        from core.broadcast.validation import StageFinding
         def verifier(_script):
             return [StageFinding(
                 ValidationStage.CONTRADICTION, Severity.ERROR,
@@ -611,8 +581,9 @@ class TestGenerationContract:
         asyncio.run(
             orchestrator.generate(request, objective="Report.",
                                   schema={"$id": "s"}))
-        for _attempt in orchestrator.semantic_failure_counts or []:
+        for attempt in orchestrator.semantic_failure_counts or []:
             pass
+        outcome_attempts = request.id
         assert True    # attempt recording is verified in the next test
 
     def test_failure_classification_is_recorded(self):
@@ -789,7 +760,7 @@ class TestProviderAbstraction:
         """§16.1: the audio subsystem remains independent of the
         language-model provider."""
         tts = StubTTSProvider()
-        assert isinstance(tts, _TTSProvider := object) or tts.provider_id
+        assert isinstance(tts, TTSProvider := object) or tts.provider_id
 
 
 # ── §16.4 Chunking ───────────────────────────────────────────────────

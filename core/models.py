@@ -18,16 +18,16 @@ Core distinctions this module enforces:
   time, and transaction time are distinct concepts (§5.9.1).
 """
 
-import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import List, Optional, Dict, Any
+import uuid
 
 
 def _utcnow() -> datetime:
     """Timezone-aware UTC now. Never a naive datetime."""
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _new_id() -> str:
@@ -230,16 +230,16 @@ class Source:
     """
     id: str = field(default_factory=_new_id)
     name: str = ""
-    canonical_domain: str | None = None
+    canonical_domain: Optional[str] = None
     source_type: SourceType = SourceType.RSS
     endpoint: str = ""
-    publisher_identity: str | None = None
-    ownership_group_id: str | None = None
-    trust_profile_id: str | None = None
+    publisher_identity: Optional[str] = None
+    ownership_group_id: Optional[str] = None
+    trust_profile_id: Optional[str] = None
     enabled: bool = True
     poll_interval_seconds: int = 300
-    last_attempt_at: datetime | None = None
-    last_success_at: datetime | None = None
+    last_attempt_at: Optional[datetime] = None
+    last_success_at: Optional[datetime] = None
     failure_count: int = 0
     created_at: datetime = field(default_factory=_utcnow)
     updated_at: datetime = field(default_factory=_utcnow)
@@ -263,19 +263,19 @@ class Article:
     canonical_url: str = ""
     original_url: str = ""
     title: str = ""
-    author: str | None = None
-    published_at: datetime | None = None       # valid time
-    source_updated_at: datetime | None = None
+    author: Optional[str] = None
+    published_at: Optional[datetime] = None       # valid time
+    source_updated_at: Optional[datetime] = None
     first_seen_at: datetime = field(default_factory=_utcnow)   # observation time
     fetched_at: datetime = field(default_factory=_utcnow)      # transaction time
     language: str = "en"
     content_hash: str = ""
     normalized_text: str = ""
-    raw_content_reference: str | None = None
+    raw_content_reference: Optional[str] = None
     extraction_status: ExtractionStatus = ExtractionStatus.PENDING
     publication_version: int = 1
-    supersedes_article_id: str | None = None
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    supersedes_article_id: Optional[str] = None
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 # ── Entity ───────────────────────────────────────────────────────────
@@ -288,13 +288,13 @@ class Entity:
     canonical_name: str = ""
     entity_type: EntityType = EntityType.CONCEPT
     description: str = ""
-    aliases: list[str] = field(default_factory=list)
-    external_identifiers: dict[str, str] = field(default_factory=dict)
-    canonical_uri: str | None = None
+    aliases: List[str] = field(default_factory=list)
+    external_identifiers: Dict[str, str] = field(default_factory=dict)
+    canonical_uri: Optional[str] = None
     first_observed_at: datetime = field(default_factory=_utcnow)
     last_observed_at: datetime = field(default_factory=_utcnow)
     status: EntityStatus = EntityStatus.ACTIVE
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 # ── Event ────────────────────────────────────────────────────────────
@@ -313,14 +313,14 @@ class Event:
     event_type: str = ""
     summary: str = ""
     status: EventStatus = EventStatus.EMERGING
-    occurred_at_start: datetime | None = None
-    occurred_at_end: datetime | None = None
+    occurred_at_start: Optional[datetime] = None
+    occurred_at_end: Optional[datetime] = None
     first_observed_at: datetime = field(default_factory=_utcnow)
     last_material_update_at: datetime = field(default_factory=_utcnow)
-    parent_event_id: str | None = None
-    supersedes_event_id: str | None = None
+    parent_event_id: Optional[str] = None
+    supersedes_event_id: Optional[str] = None
     confidence_state: str = "unassessed"
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 # ── Story ────────────────────────────────────────────────────────────
@@ -339,14 +339,14 @@ class Story:
     status: StoryStatus = StoryStatus.ACTIVE
     created_at: datetime = field(default_factory=_utcnow)
     last_material_update_at: datetime = field(default_factory=_utcnow)
-    last_broadcast_at: datetime | None = None
-    last_substantial_coverage_at: datetime | None = None
+    last_broadcast_at: Optional[datetime] = None
+    last_substantial_coverage_at: Optional[datetime] = None
     audience_relevance_state: str = "neutral"
     unresolved_question_count: int = 0
-    entity_ids: list[str] = field(default_factory=list)
-    claim_ids: list[str] = field(default_factory=list)
+    entity_ids: List[str] = field(default_factory=list)
+    claim_ids: List[str] = field(default_factory=list)
     confidence: float = 0.0
-    corrected_by: str | None = None
+    corrected_by: Optional[str] = None
 
 
 # ── Claim and evidence ───────────────────────────────────────────────
@@ -359,18 +359,18 @@ class Claim:
     canonical_proposition: str = ""
     claim_type: ClaimType = ClaimType.OBSERVATIONAL
     epistemic_status: ClaimStatus = ClaimStatus.UNASSESSED
-    normalized_subject_id: str | None = None
-    normalized_predicate: str | None = None
-    normalized_object: str | None = None
+    normalized_subject_id: Optional[str] = None
+    normalized_predicate: Optional[str] = None
+    normalized_object: Optional[str] = None
     first_observed_at: datetime = field(default_factory=_utcnow)
-    last_evaluated_at: datetime | None = None
-    valid_time_start: datetime | None = None
-    valid_time_end: datetime | None = None
-    supersedes_claim_id: str | None = None
+    last_evaluated_at: Optional[datetime] = None
+    valid_time_start: Optional[datetime] = None
+    valid_time_end: Optional[datetime] = None
+    supersedes_claim_id: Optional[str] = None
     created_by_component: str = ""
     confidence: float = 0.0
-    corrected_by: str | None = None
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    corrected_by: Optional[str] = None
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -383,18 +383,18 @@ class Evidence:
     """
     id: str = field(default_factory=_new_id)
     evidence_type: str = "passage"
-    article_id: str | None = None
+    article_id: Optional[str] = None
     source_id: str = ""
     content_reference: str = ""
     excerpt: str = ""
     content_hash: str = ""
     observed_at: datetime = field(default_factory=_utcnow)
-    source_published_at: datetime | None = None
+    source_published_at: Optional[datetime] = None
     extraction_method: str = ""
-    extraction_model: str | None = None
+    extraction_model: Optional[str] = None
     extraction_version: str = ""
     provenance_status: str = "unverified"
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -411,10 +411,10 @@ class ClaimEvidence:
     claim_id: str = ""
     evidence_id: str = ""
     relationship_type: EvidenceRelationship = EvidenceRelationship.SUPPORTS
-    assessment: str | None = None
+    assessment: Optional[str] = None
     assessment_method: str = ""
-    assessed_at: datetime | None = None
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    assessed_at: Optional[datetime] = None
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 # ── Correction ───────────────────────────────────────────────────────
@@ -435,15 +435,15 @@ class Correction:
     correction_type: CorrectionType = CorrectionType.PUBLISHER
     target_type: str = ""          # "article" | "claim" | "event" | "entity" | "broadcast_segment"
     target_id: str = ""
-    originating_source_id: str | None = None
+    originating_source_id: Optional[str] = None
     original_value_reference: str = ""
     corrected_value_reference: str = ""
     reason: str = ""
     detected_at: datetime = field(default_factory=_utcnow)
-    effective_at: datetime | None = None
+    effective_at: Optional[datetime] = None
     review_status: str = "pending"
-    supersedes_correction_id: str | None = None
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    supersedes_correction_id: Optional[str] = None
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 # ── Snapshots ────────────────────────────────────────────────────────
@@ -462,17 +462,17 @@ class WorldSnapshot:
     knowledge_watermark: str = ""
     schema_version: int = 1
     snapshot_type: str = "full"
-    parent_snapshot_id: str | None = None
+    parent_snapshot_id: Optional[str] = None
     content_hash: str = ""
-    included_record_manifest: dict[str, list[str]] = field(default_factory=dict)
+    included_record_manifest: Dict[str, List[str]] = field(default_factory=dict)
     unresolved_issue_count: int = 0
     story_count: int = 0
     claim_count: int = 0
     evidence_count: int = 0
     entity_count: int = 0
     article_count: int = 0
-    state_reference: str | None = None
-    metadata_json: dict[str, Any] = field(default_factory=dict)
+    state_reference: Optional[str] = None
+    metadata_json: Dict[str, Any] = field(default_factory=dict)
 
 
 # ── Filters ──────────────────────────────────────────────────────────
@@ -480,30 +480,30 @@ class WorldSnapshot:
 
 @dataclass
 class StoryFilter:
-    status: StoryStatus | None = None
-    entity_id: str | None = None
-    since: datetime | None = None
-    until: datetime | None = None
+    status: Optional[StoryStatus] = None
+    entity_id: Optional[str] = None
+    since: Optional[datetime] = None
+    until: Optional[datetime] = None
 
 
 @dataclass
 class ClaimFilter:
-    status: ClaimStatus | None = None
-    claim_type: ClaimType | None = None
-    source_id: str | None = None
-    since: datetime | None = None
-    until: datetime | None = None
+    status: Optional[ClaimStatus] = None
+    claim_type: Optional[ClaimType] = None
+    source_id: Optional[str] = None
+    since: Optional[datetime] = None
+    until: Optional[datetime] = None
 
 
 @dataclass
 class SnapshotDiff:
     a_id: str = ""
     b_id: str = ""
-    new_stories: list[str] = field(default_factory=list)
-    new_claims: list[str] = field(default_factory=list)
-    new_evidence: list[str] = field(default_factory=list)
-    new_entities: list[str] = field(default_factory=list)
-    new_articles: list[str] = field(default_factory=list)
-    new_corrections: list[str] = field(default_factory=list)
-    changed_claims: list[str] = field(default_factory=list)
+    new_stories: List[str] = field(default_factory=list)
+    new_claims: List[str] = field(default_factory=list)
+    new_evidence: List[str] = field(default_factory=list)
+    new_entities: List[str] = field(default_factory=list)
+    new_articles: List[str] = field(default_factory=list)
+    new_corrections: List[str] = field(default_factory=list)
+    changed_claims: List[str] = field(default_factory=list)
     human_readable: str = ""

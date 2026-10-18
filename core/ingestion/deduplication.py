@@ -21,11 +21,11 @@ discarding it, because discarding is the destructive and unrecoverable action
 (invariant I9).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Dict, List, Optional, Set
 
-from .canonicalization import content_hash as hash_text
-from .canonicalization import text_similarity
+from .canonicalization import text_similarity, content_hash as hash_text
 
 
 class DuplicateKind(Enum):
@@ -50,10 +50,10 @@ class DuplicateCandidate:
     supersede decision is load-bearing and must not depend on prose.
     """
     kind: DuplicateKind
-    existing_article_id: str | None = None
-    existing_canonical_url: str | None = None
+    existing_article_id: Optional[str] = None
+    existing_canonical_url: Optional[str] = None
     confidence: float = 0.0
-    similarity: float | None = None
+    similarity: Optional[float] = None
     reason: str = ""
     content_changed: bool = False
 
@@ -108,7 +108,7 @@ class Deduplicator:
     testable function and never issues queries from inside a transaction.
     """
 
-    def __init__(self, policy: DeduplicationPolicy | None = None):
+    def __init__(self, policy: Optional[DeduplicationPolicy] = None):
         self.policy = policy or DEFAULT_POLICY
 
     def classify(
@@ -116,8 +116,8 @@ class Deduplicator:
         canonical_url: str,
         normalized_text: str,
         source_id: str,
-        existing: list["ExistingArticle"],
-        text_hash: str | None = None,
+        existing: List["ExistingArticle"],
+        text_hash: Optional[str] = None,
     ) -> DuplicateCandidate:
         """Run the §7.5.1 pipeline in order and return the first match.
 
@@ -170,7 +170,7 @@ class Deduplicator:
                 )
 
         # 3. Near-duplicate text comparison.
-        best: DuplicateCandidate | None = None
+        best: Optional[DuplicateCandidate] = None
         best_similarity = 0.0
         for article in existing:
             if not article.normalized_text:
@@ -220,9 +220,9 @@ class ExistingArticle:
 
 
 def detect_syndication_group(
-    articles: list[ExistingArticle],
-    policy: DeduplicationPolicy | None = None,
-) -> list[list[str]]:
+    articles: List[ExistingArticle],
+    policy: Optional[DeduplicationPolicy] = None,
+) -> List[List[str]]:
     """Group articles that share content across sources.
 
     Returns groups of article IDs. Used to record source relationships so
@@ -230,12 +230,12 @@ def detect_syndication_group(
     confirmations (invariant I1/I8).
     """
     policy = policy or DEFAULT_POLICY
-    by_hash: dict[str, list[str]] = {}
+    by_hash: Dict[str, List[str]] = {}
     for article in articles:
         if article.content_hash:
             by_hash.setdefault(article.content_hash, []).append(article.id)
 
-    groups: list[list[str]] = []
+    groups: List[List[str]] = []
     for ids in by_hash.values():
         if len(ids) > 1:
             groups.append(sorted(ids))
@@ -245,7 +245,7 @@ def detect_syndication_group(
 
     # Near-identical text across different sources is also syndication.
     remaining = [a for a in articles if not a.content_hash]
-    seen: set[str] = set()
+    seen: Set[str] = set()
     for article in remaining:
         if article.id in seen:
             continue

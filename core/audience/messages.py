@@ -20,9 +20,9 @@ touches the broadcast or the world model directly — it enqueues.
 import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 
 class MessageType(Enum):
@@ -59,11 +59,11 @@ class ListenerMessage:
     received_at: datetime
     content: str
     message_type: MessageType = MessageType.OTHER
-    topic_candidates: list[str] = field(default_factory=list)
+    topic_candidates: List[str] = field(default_factory=list)
     moderation_status: ModerationStatus = ModerationStatus.PENDING
     processing_status: ProcessingStatus = ProcessingStatus.RECEIVED
-    response_segment_id: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    response_segment_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def content_hash(self) -> str:
@@ -81,9 +81,9 @@ class ResearchTask:
     id: str
     message_id: str
     question: str
-    topic_candidates: list[str] = field(default_factory=list)
+    topic_candidates: List[str] = field(default_factory=list)
     requires_review: bool = False
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -110,13 +110,13 @@ class RateLimiter:
         self.max_queue_influence = max_queue_influence
         self.window_minutes = window_minutes
         self.window_hours = window_hours
-        self._minute: dict[str, deque[datetime]] = defaultdict(deque)
-        self._hour: dict[str, deque[datetime]] = defaultdict(deque)
-        self._topics: dict[str, dict[str, datetime]] = defaultdict(dict)
+        self._minute: Dict[str, Deque[datetime]] = defaultdict(deque)
+        self._hour: Dict[str, Deque[datetime]] = defaultdict(deque)
+        self._topics: Dict[str, Dict[str, datetime]] = defaultdict(dict)
 
     def check(self, client_id: str, topic: str = "",
-              now: datetime | None = None) -> RateLimitDecision:
-        now = now or datetime.now(UTC)
+              now: Optional[datetime] = None) -> RateLimitDecision:
+        now = now or datetime.now(timezone.utc)
         self._expire(client_id, now)
 
         minute_window = self._minute[client_id]
@@ -147,8 +147,8 @@ class RateLimiter:
         return RateLimitDecision(True)
 
     def record(self, client_id: str, topic: str = "",
-               now: datetime | None = None) -> None:
-        now = now or datetime.now(UTC)
+               now: Optional[datetime] = None) -> None:
+        now = now or datetime.now(timezone.utc)
         self._minute[client_id].append(now)
         self._hour[client_id].append(now)
         if topic:
@@ -195,7 +195,7 @@ class AbuseAssessment:
     induces_false_claim: bool = False
     involves_serious_allegation: bool = False
     requires_review: bool = False
-    reasons: list[str] = field(default_factory=list)
+    reasons: List[str] = field(default_factory=list)
 
     @property
     def should_reject(self) -> bool:
@@ -243,7 +243,7 @@ class AbuseClassifier:
     def classify(
         self,
         message: ListenerMessage,
-        recent_hashes: list[str] | None = None,
+        recent_hashes: Optional[List[str]] = None,
         client_message_count_recent: int = 0,
         coordinated_client_count: int = 0,
     ) -> AbuseAssessment:
@@ -303,8 +303,8 @@ class FeedbackSignal(Enum):
 class FeedbackRecord:
     signal: FeedbackSignal
     segment_id: str = ""
-    value: float | None = None
-    recorded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    value: Optional[float] = None
+    recorded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class FeedbackCollector:
@@ -328,28 +328,28 @@ class FeedbackCollector:
     }
 
     def __init__(self):
-        self._records: list[FeedbackRecord] = []
+        self._records: List[FeedbackRecord] = []
 
     def record(self, signal: FeedbackSignal, segment_id: str = "",
-               value: float | None = None) -> FeedbackRecord:
+               value: Optional[float] = None) -> FeedbackRecord:
         entry = FeedbackRecord(signal=signal, segment_id=segment_id, value=value)
         self._records.append(entry)
         return entry
 
-    def counts(self) -> dict[str, int]:
-        result: dict[str, int] = {}
+    def counts(self) -> Dict[str, int]:
+        result: Dict[str, int] = {}
         for entry in self._records:
             key = entry.signal.value
             result[key] = result.get(key, 0) + 1
         return result
 
-    def ambiguity_notes(self) -> list[str]:
+    def ambiguity_notes(self) -> List[str]:
         """The caveats that must accompany any use of these signals."""
         present = {r.signal for r in self._records}
         return [self.AMBIGUOUS_SIGNALS[s] for s in self.AMBIGUOUS_SIGNALS
                 if s in present]
 
-    def preference_signal(self, segment_id: str) -> dict[str, Any]:
+    def preference_signal(self, segment_id: str) -> Dict[str, Any]:
         """A bounded, explicitly noisy preference reading.
 
         Never a truth or importance score. The confidence cap is the point:
@@ -386,27 +386,27 @@ class MessagePipeline:
 
     def __init__(
         self,
-        rate_limiter: RateLimiter | None = None,
-        classifier: AbuseClassifier | None = None,
-        event_store: Any | None = None,
+        rate_limiter: Optional[RateLimiter] = None,
+        classifier: Optional[AbuseClassifier] = None,
+        event_store: Optional[Any] = None,
         queue_quota: int = 20,          # max queued tasks (§17.5 queue quotas)
     ):
         self.rate_limiter = rate_limiter or RateLimiter()
         self.classifier = classifier or AbuseClassifier()
         self.event_store = event_store
         self.queue_quota = queue_quota
-        self.messages: dict[str, ListenerMessage] = {}
-        self.tasks: deque[ResearchTask] = deque()
-        self.recent_hashes: deque[str] = deque(maxlen=200)
+        self.messages: Dict[str, ListenerMessage] = {}
+        self.tasks: Deque[ResearchTask] = deque()
+        self.recent_hashes: Deque[str] = deque(maxlen=200)
 
     def submit(self, session_id: str, client_id: str, content: str,
-               now: datetime | None = None) -> tuple[ListenerMessage, str]:
+               now: Optional[datetime] = None) -> Tuple[ListenerMessage, str]:
         """Run steps 1–8. Returns the message and a disposition.
 
         This method does not block: it enqueues a durable event and a task.
         It never touches the broadcast or the world model (§17.1).
         """
-        now = now or datetime.now(UTC)
+        now = now or datetime.now(timezone.utc)
 
         # Step 1: validate.
         if not content or not content.strip():
@@ -503,7 +503,7 @@ class MessagePipeline:
             return MessageType.FEEDBACK
         return MessageType.OTHER
 
-    def _extract_topics(self, content: str) -> list[str]:
+    def _extract_topics(self, content: str) -> List[str]:
         """Candidate topics for matching against stories.
 
         Deterministic noun-phrase-free extraction: capitalized runs and
@@ -511,7 +511,7 @@ class MessagePipeline:
         candidates against stories.
         """
         import re
-        topics: list[str] = []
+        topics: List[str] = []
         for match in re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b", content):
             if match.lower() not in ("the", "i", "why", "how", "what"):
                 topics.append(match)

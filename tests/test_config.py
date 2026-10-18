@@ -17,8 +17,8 @@ import sys
 
 import pytest
 
-from core.broadcast.providers import SynthesisRequest
-from core.config import TTS_LABEL_MAP, ModelContext
+from core.broadcast.providers import SynthesisRequest, TTSProvider
+from core.config import ModelContext, TTS_LABEL_MAP
 
 TTS_BACKENDS = ["qwen3-tts-http", "piper", "espeak", "say", "silence"]
 LLM_BACKENDS = ["ollama", "llama_cpp"]
@@ -60,7 +60,7 @@ def test_available_tts_actually_produces_audio():
     A machine with no voice at all is a legitimate state, but then 'silence'
     must still be the working floor — the station never has zero audio path.
     """
-    ModelContext.from_mapping({})
+    ctx = ModelContext.from_mapping({})
     produced = []
     for backend in TTS_BACKENDS:
         provider = ModelContext.from_mapping(
@@ -98,7 +98,7 @@ def test_llm_backend_constructs_or_fails_closed(backend):
     ctx = ModelContext.from_mapping(
         {"llm": {"backend": backend, "model": "/nonexistent/model.gguf"}})
     if backend == "llama_cpp":
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(Exception):
             ctx.llm_provider()
     else:
         assert ctx.llm_provider() is not None
@@ -236,6 +236,7 @@ def test_frozen_build_does_not_write_to_the_extraction_dir(monkeypatch):
     agree with core.desktop's own resolver.
     """
     import importlib
+    import sys
     from pathlib import Path
 
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -262,8 +263,8 @@ def test_frozen_build_does_not_write_to_the_extraction_dir(monkeypatch):
 
 def test_source_run_still_uses_the_project_data_dir():
     """The fix must not move a source run's data out of the repo."""
-    from core.desktop import _project_root
     from core.inference.console import _data_dir
+    from core.desktop import _project_root
     root = _project_root()
     assert (root / "core").is_dir(), f"{root} is not the project root"
     assert _data_dir() == root

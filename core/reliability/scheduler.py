@@ -25,11 +25,11 @@ its own guard: a task is keyed by its idempotency key, and a re-enqueued task
 that is already pending is coalesced, not duplicated.
 """
 
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import IntEnum
-from typing import Any
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from .metrics import MetricsRegistry, Subsystem
 
@@ -49,7 +49,7 @@ class Task:
     priority: Priority
     payload: Any = None
     idempotency_key: str = ""
-    enqueued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    enqueued_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     attempts: int = 0
     max_attempts: int = 3
 
@@ -72,8 +72,8 @@ class PriorityScheduler:
 
     def __init__(
         self,
-        policies: dict[Priority, BackpressurePolicy] | None = None,
-        metrics: MetricsRegistry | None = None,
+        policies: Optional[Dict[Priority, BackpressurePolicy]] = None,
+        metrics: Optional[MetricsRegistry] = None,
     ):
         self.metrics = metrics or MetricsRegistry()
         default = {
@@ -89,9 +89,9 @@ class PriorityScheduler:
                                                                max_concurrency=1),
         }
         self.policies = policies or default
-        self._queues: dict[Priority, deque[Task]] = {
+        self._queues: Dict[Priority, Deque[Task]] = {
             p: deque() for p in Priority}
-        self._pending_keys: dict[str, str] = {}     # idempotency key -> task id
+        self._pending_keys: Dict[str, str] = {}     # idempotency key -> task id
         self._running = 0
         self._deferred_count = 0
         self._coalesced_count = 0
@@ -122,7 +122,7 @@ class PriorityScheduler:
                                self.backlog())
         return True
 
-    def next_task(self) -> Task | None:
+    def next_task(self) -> Optional[Task]:
         """The highest-priority runnable task, respecting concurrency (§23.2)."""
         for priority in Priority:
             policy = self.policies[priority]
@@ -161,7 +161,7 @@ class PriorityScheduler:
     def backlog(self) -> int:
         return sum(len(q) for q in self._queues.values())
 
-    def backlog_by_priority(self) -> dict[str, int]:
+    def backlog_by_priority(self) -> Dict[str, int]:
         return {p.name: len(self._queues[p]) for p in Priority}
 
     def _running_for(self, priority: Priority) -> int:

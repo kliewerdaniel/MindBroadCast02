@@ -24,13 +24,13 @@ machinery; this adds the editorial structuring pass it lacks).
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class EditorialPlan:
     """A structured bulletin: ordered turns, each traced to source facts."""
-    turns: list[dict[str, Any]] = field(default_factory=list)
+    turns: List[Dict[str, Any]] = field(default_factory=list)
     grounded: bool = True
     dropped_turns: int = 0
     notes: str = ""
@@ -38,8 +38,9 @@ class EditorialPlan:
 
 def _content_tokens(text: str) -> set:
     """Lowercased alphanumeric tokens, minus trivial function words."""
-    stop = set(["the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "with",
-        is", "are", "was", "were", "be", "been", "it", "its", "this", "that", "will", "now", "as", "at", "by", "from", "has", "have", "had", "not", "no", "also", "into", "over", "after", "before", "about", "he", "she", "they"])
+    stop = set("the a an and or but of to in on for with is are was were be "
+               "been it its this that will now as at by from has have had "
+               "not no also into over after before about he she they".split())
     return {w for w in re.findall(r"[a-z0-9]+", text.lower())
             if w not in stop and len(w) > 1}
 
@@ -109,7 +110,7 @@ class GroundingVerifier:
         "consistent", "mirrors", "mirror", "echoes", "parallel", "parallels",
         "causal", "cause", "consequence", "consequences", "second-order",
         "established", "unproven", "proven", "evidence", "link", "linked",
-        "connection", "correlation", "strategic", "deliberate",
+        "connection", "correlation", "causal", "strategic", "deliberate",
         "appears", "seems", "likely", "possibly", "perhaps", "arguably",
         "becoming", "built", "activity", "activities", "role", "roles",
         "amplification", "channels", "channel", "narrative", "narratives",
@@ -117,10 +118,10 @@ class GroundingVerifier:
         "normalize", "extending", "influence", "worker", "figure", "figures",
         "elevating", "elevated", "elevate", "appointing", "appointed",
         "placing", "placed", "consolidating", "reinforce", "reinforces",
-        "reinforcing", "institutionalize", "normalizing",
+        "reinforcing", "institutional", "institutionalize", "normalizing",
     }
 
-    def __init__(self, facts: list[str]):
+    def __init__(self, facts: List[str]):
         self.source_tokens: set = set()
         self.source_numbers: set = set()
         for f in facts:
@@ -134,17 +135,19 @@ class GroundingVerifier:
         # Numbers must all appear in the source — a new figure is invention.
         if not _numbers(text).issubset(self.source_numbers):
             return False
-        novel = _content_tokens(text) - self.source_tokens - self.ALLOWED_CONNECTIVES -
-            elf.ANALYTICAL_VOCAB
+        novel = _content_tokens(text) - self.source_tokens - self.ALLOWED_CONNECTIVES - self.ANALYTICAL_VOCAB
         # Accept morphological variants of sourced words (plurals, verb
         # endings, boosted/raises): a token is allowed if it shares a stem
         # with any source token. Compare on a crude stem (strip common
         # suffixes) so "boosted"/"boost" and "companies"/"company" match,
         # while genuinely new words ("musk", "million") still fail.
         source_stems = {_stem(s) for s in self.source_tokens}
-        return all(_stem(tok) in source_stems for tok in novel)
+        for tok in novel:
+            if _stem(tok) not in source_stems:
+                return False
+        return True
 
-    def introduces_new_entities(self, turn_text: str) -> list[str]:
+    def introduces_new_entities(self, turn_text: str) -> List[str]:
         """Proper-noun-like tokens absent from the source facts.
 
         The concrete §12.3 violation is inventing a named entity or figure —
@@ -158,7 +161,7 @@ class GroundingVerifier:
         text = turn_text.strip()
         if not text:
             return []
-        " ".join(sorted(self.source_tokens))
+        source_lower = " ".join(sorted(self.source_tokens))
         # Capitalized words not at sentence start are likely proper nouns.
         words = re.findall(r"\b[A-Z][a-zA-Z]+\b", text)
         invented = []
@@ -175,7 +178,7 @@ class GroundingVerifier:
             invented.append(w)
         return invented
 
-    def introduces_new_numbers(self, turn_text: str) -> list[str]:
+    def introduces_new_numbers(self, turn_text: str) -> List[str]:
         """Numeric tokens absent from the source facts.
 
         A fabricated figure is invention even without a named entity — "47
@@ -184,7 +187,7 @@ class GroundingVerifier:
         """
         return sorted(_numbers(turn_text) - self.source_numbers)
 
-    def fabrication_reason(self, turn_text: str) -> str | None:
+    def fabrication_reason(self, turn_text: str) -> Optional[str]:
         """Why a turn fails the grounding floor, or None if it passes.
 
         The bounded, checkable classes of §12.3 invention: a named entity or a
@@ -229,7 +232,7 @@ class EditorialComposer:
     def __init__(self, llm: Any):
         self.llm = llm
 
-    def build_prompt(self, facts: list[str]) -> str:
+    def build_prompt(self, facts: List[str]) -> str:
         numbered = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(facts))
         return (
             f"{self.SYSTEM}\n"
@@ -241,7 +244,7 @@ class EditorialComposer:
             f'"speech_act":"analysis"}}]}}'
         )
 
-    def compose(self, raw_text: str, facts: list[str]) -> EditorialPlan:
+    def compose(self, raw_text: str, facts: List[str]) -> EditorialPlan:
         """Parse the model's turns and keep only the grounded ones.
 
         Deterministic post-processing: the model proposes the structure, this
@@ -284,7 +287,7 @@ class EditorialComposer:
         return plan
 
 
-def _extract_json_safe(text: str) -> Any | None:
+def _extract_json_safe(text: str) -> Optional[Any]:
     """First balanced JSON object/array in text, tolerating fences/prose."""
     if not text:
         return None

@@ -15,10 +15,9 @@ recorded state, so it is testable without a clock or a network.
 """
 
 import random
-from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Sequence
 
 
 @dataclass
@@ -31,8 +30,8 @@ class SourcePollState:
     endpoint: str
     poll_interval_seconds: int = 300
     enabled: bool = True
-    last_attempt_at: datetime | None = None
-    last_success_at: datetime | None = None
+    last_attempt_at: Optional[datetime] = None
+    last_success_at: Optional[datetime] = None
     failure_count: int = 0
     importance: float = 1.0
 
@@ -46,7 +45,7 @@ class BackoffPolicy:
     jitter_fraction: float = 0.25
 
     def delay_for(self, failure_count: int,
-                  rng: Any | None = None) -> float:
+                  rng: Optional[Any] = None) -> float:
         """Delay before the next attempt after `failure_count` failures.
 
         Capped, so a source that has been failing for days does not acquire an
@@ -82,8 +81,8 @@ DEFAULT_POLICY = SchedulerPolicy()
 def is_due(
     state: SourcePollState,
     now: datetime,
-    policy: SchedulerPolicy | None = None,
-    rng: random.Random | None = None,
+    policy: Optional[SchedulerPolicy] = None,
+    rng: Optional[random.Random] = None,
 ) -> bool:
     """Whether a source should be polled at `now`.
 
@@ -119,9 +118,9 @@ def is_due(
 def select_due_sources(
     states: Sequence[SourcePollState],
     now: datetime,
-    policy: SchedulerPolicy | None = None,
-    rng: random.Random | None = None,
-) -> list[SourcePollState]:
+    policy: Optional[SchedulerPolicy] = None,
+    rng: Optional[random.Random] = None,
+) -> List[SourcePollState]:
     """All due sources, ordered so the most overdue and most important go first.
 
     Bounded by `max_concurrent_fetches` — the scheduler never starts more
@@ -145,9 +144,9 @@ def select_due_sources(
 def next_attempt_time(
     state: SourcePollState,
     now: datetime,
-    policy: SchedulerPolicy | None = None,
-    rng: random.Random | None = None,
-) -> datetime | None:
+    policy: Optional[SchedulerPolicy] = None,
+    rng: Optional[random.Random] = None,
+) -> Optional[datetime]:
     """When this source becomes eligible again, or None if already due."""
     policy = policy or DEFAULT_POLICY
     if is_due(state, now, policy, rng):
@@ -200,16 +199,16 @@ def decide_under_backpressure(
 class Scheduler:
     """Coordinates polling across sources under the configured policy."""
 
-    def __init__(self, policy: SchedulerPolicy | None = None,
-                 rng: random.Random | None = None):
+    def __init__(self, policy: Optional[SchedulerPolicy] = None,
+                 rng: Optional[random.Random] = None):
         self.policy = policy or DEFAULT_POLICY
         self.rng = rng or random.Random()
 
     def due_sources(
         self, states: Sequence[SourcePollState],
-        now: datetime | None = None,
-    ) -> list[SourcePollState]:
-        now = now or datetime.now(UTC)
+        now: Optional[datetime] = None,
+    ) -> List[SourcePollState]:
+        now = now or datetime.now(timezone.utc)
         return select_due_sources(states, now, self.policy, self.rng)
 
     def backoff_delay(self, failure_count: int) -> float:

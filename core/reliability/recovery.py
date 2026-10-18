@@ -15,10 +15,11 @@ recovery replays only what was not.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..broadcast.director import BroadcastDirector
-from ..broadcast.entities import SegmentStatus
+from ..broadcast.entities import Segment, SegmentStatus
 
 
 @dataclass
@@ -27,7 +28,7 @@ class RecoveryReport:
     recovered_queue: int = 0
     duplicates_avoided: int = 0
     already_complete: int = 0
-    errors: list[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
 
     @property
     def succeeded(self) -> bool:
@@ -43,8 +44,8 @@ class RecoveryLedger:
     """
 
     def __init__(self):
-        self.committed: set[str] = set()
-        self.in_flight: set[str] = set()
+        self.committed: Set[str] = set()
+        self.in_flight: Set[str] = set()
 
     def begin(self, task_id: str) -> None:
         self.in_flight.add(task_id)
@@ -56,18 +57,18 @@ class RecoveryLedger:
     def was_committed(self, task_id: str) -> bool:
         return task_id in self.committed
 
-    def pending(self) -> set[str]:
+    def pending(self) -> Set[str]:
         """In-flight but not committed — the recovery set."""
         return set(self.in_flight)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "committed": sorted(self.committed),
             "in_flight": sorted(self.in_flight),
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RecoveryLedger":
+    def from_dict(cls, data: Dict[str, Any]) -> "RecoveryLedger":
         ledger = cls()
         ledger.committed = set(data.get("committed", []))
         ledger.in_flight = set(data.get("in_flight", []))
@@ -84,7 +85,7 @@ class CrashRecoveryHarness:
     def __init__(self):
         self.ledger = RecoveryLedger()
 
-    def snapshot_state(self, director: BroadcastDirector) -> dict[str, Any]:
+    def snapshot_state(self, director: BroadcastDirector) -> Dict[str, Any]:
         """Capture the persistable state before the simulated kill."""
         return director.persistable_state()
 
@@ -96,7 +97,7 @@ class CrashRecoveryHarness:
         """
         return None
 
-    def recover(self, persisted_state: dict[str, Any]) -> tuple[BroadcastDirector, RecoveryReport]:
+    def recover(self, persisted_state: Dict[str, Any]) -> Tuple[BroadcastDirector, RecoveryReport]:
         """Rebuild from persisted state and report what was recovered."""
         report = RecoveryReport()
         director = BroadcastDirector.recover(persisted_state)
@@ -114,13 +115,13 @@ class CrashRecoveryHarness:
         report.recovered_queue = len(director.queue)
         return director, report
 
-    def recover_tasks(self, task_ids: list[str]) -> list[str]:
+    def recover_tasks(self, task_ids: List[str]) -> List[str]:
         """Replay only tasks that were not committed before the kill.
 
         §23.3 rule 7 and §30's "processing retries do not create unintended
         duplicate records."
         """
-        replay: list[str] = []
+        replay: List[str] = []
         for task_id in task_ids:
             if self.ledger.was_committed(task_id):
                 continue
@@ -129,8 +130,8 @@ class CrashRecoveryHarness:
             replay.append(task_id)
         return replay
 
-    def verify_no_duplication(self, recovered_segments: list[str],
-                              committed_segments: list[str]) -> bool:
+    def verify_no_duplication(self, recovered_segments: List[str],
+                              committed_segments: List[str]) -> bool:
         """No segment appears both committed and recovered."""
         return not (set(recovered_segments) & set(committed_segments))
 
@@ -151,7 +152,7 @@ class LongRunResult:
     cycles: int = 0
     peak_backlog: int = 0
     peak_queue_depth: int = 0
-    ceiling_violations: list[str] = field(default_factory=list)
+    ceiling_violations: List[str] = field(default_factory=list)
     duplicate_segments: int = 0
     recovered_crashes: int = 0
 
@@ -169,19 +170,19 @@ class LongDurationSimulator:
     is an operational concern.
     """
 
-    def __init__(self, ceilings: list[ResourceCeiling] | None = None):
+    def __init__(self, ceilings: Optional[List[ResourceCeiling]] = None):
         self.ceilings = ceilings or [
             ResourceCeiling("backlog", 1000, "tasks"),
             ResourceCeiling("queue_depth", 512, "chunks"),
             ResourceCeiling("memory_bytes", 512 * 1024 * 1024, "bytes"),
         ]
 
-    def run(self, workload: list[Any], scheduler: Any,
+    def run(self, workload: List[Any], scheduler: Any,
             crash_every: int = 0) -> LongRunResult:
         """Process a workload, optionally crashing and recovering periodically."""
         result = LongRunResult()
-        committed: list[str] = []
-        recovered_all: list[str] = []
+        committed: List[str] = []
+        recovered_all: List[str] = []
 
         for index, item in enumerate(workload):
             scheduler.enqueue(item)
@@ -216,5 +217,5 @@ class LongDurationSimulator:
                     f"{name} {value} exceeds {ceiling.limit} {ceiling.unit}")
 
 
-def _segments(report) -> list[Any]:
+def _segments(report) -> List[Any]:
     return []

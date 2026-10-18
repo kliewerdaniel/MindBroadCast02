@@ -24,6 +24,8 @@ A generated summary with no traceable underlying passage is not evidence
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 from ..models import EvidenceRelationship
 from .claims import ClaimExtractionResult, ExtractedClaim
@@ -49,10 +51,10 @@ class ExtractedEvidence:
 @dataclass
 class EvidenceExtractionResult:
     article_id: str
-    evidence: list[ExtractedEvidence] = field(default_factory=list)
+    evidence: List[ExtractedEvidence] = field(default_factory=list)
     pass_name: str = "evidence_extraction"
     pass_version: str = "1.0.0"
-    warnings: list[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
 
 class EvidenceExtractor:

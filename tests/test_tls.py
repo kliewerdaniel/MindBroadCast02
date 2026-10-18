@@ -51,9 +51,9 @@ def test_importing_core_installs_the_bundle(monkeypatch):
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
     monkeypatch.delenv("SSL_CERT_DIR", raising=False)
     code = (
-        f"import sys; sys.path.insert(0, {str(ROOT)!r});"
+        "import sys; sys.path.insert(0, %r);"
         "import core, os;"
-        "print(os.environ.get('SSL_CERT_FILE') or '')"
+        "print(os.environ.get('SSL_CERT_FILE') or '')" % str(ROOT)
     )
     out = subprocess.run([sys.executable, "-c", code],
                          capture_output=True, text=True, timeout=60)

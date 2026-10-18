@@ -4,7 +4,16 @@ Coverage is the requirement: the registry spans every region, every URL was
 probed live, and registration is idempotent so re-registering never creates
 duplicate sources.
 """
+
 import pytest
+pytest_plugins = []
+
+
+def pytest_configure(config):
+    """Register the asyncio mark so `pytest -q` does not warn/fail."""
+    config.addinivalue_line(
+        "mark", "asyncio: mark a test as an async function"
+    )
 
 from core.inference.world_sources import (
     WORLD_FEEDS,
@@ -14,15 +23,6 @@ from core.inference.world_sources import (
     full_text_feeds,
     regions,
 )
-
-pytest_plugins = []
-
-
-def pytest_configure(config):
-    """Register the asyncio mark so `pytest -q` does not warn/fail."""
-    config.addinivalue_line(
-        "mark", "asyncio: mark a test as an async function"
-    )
 
 
 # ── registry coverage ────────────────────────────────────────────────

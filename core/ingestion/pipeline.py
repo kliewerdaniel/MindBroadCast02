@@ -1,4 +1,3 @@
-            import logging
 """Ingestion pipeline.
 
 Spec §7.1: the flow from source configuration to the knowledge processing
@@ -19,43 +18,35 @@ Two durability guarantees drive the design:
    scheduled work for an article that does not exist.
 
 2. **A restarted process can recover pending ingestion tasks** (criterion 8).
-   Pending outbox rows are the recovery source of truth
-   the pipeline never
+   Pending outbox rows are the recovery source of truth; the pipeline never
    treats an in-memory queue as the record of what remains to be done.
 
 Ingestion does not determine editorial meaning (§7.1). No language model is
 called anywhere in this module.
 """
 
+import asyncio
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from ..models import (
-    Article,
-    ExtractionStatus,
-    Source,
+    Source, SourceType, Article, ExtractionStatus,
 )
 from ..persistence import WorldStore
-from .adapters import AdapterError, FeedAdapter, NormalizedEntry
+from .adapters import FeedAdapter, NormalizedEntry, AdapterError
 from .body import enrich_with_body
 from .canonicalization import (
-    CanonicalizationPolicy,
-    CanonicalizationResult,
-    canonicalize_url,
-)
-from .canonicalization import (
+    canonicalize_url, CanonicalizationPolicy, CanonicalizationResult,
     content_hash as hash_text,
 )
 from .deduplication import (
-    DeduplicationPolicy,
-    Deduplicator,
-    DuplicateCandidate,
-    DuplicateKind,
+    Deduplicator, DeduplicationPolicy, DuplicateKind, DuplicateCandidate,
     ExistingArticle,
 )
 from .fetcher import Fetcher
+from .scheduler import SourcePollState, decide_under_backpressure
 
 
 class IngestDisposition(Enum):
@@ -64,8 +55,7 @@ class IngestDisposition(Enum):
     SUPERSEDED = "superseded"          # same URL, changed content -> new version
     DUPLICATE = "duplicate"            # exact re-observation, discarded
     ASSOCIATED = "associated"          # near-dup / syndicated, recorded, retained
-    SKIPPED_NO_URL = "skipped_no_url"  # entry had no link
-    nothing to capture
+    SKIPPED_NO_URL = "skipped_no_url"  # entry had no link; nothing to capture
     FLAGGED = "flagged"                # stored but marked for review
 
 
@@ -73,11 +63,11 @@ class IngestDisposition(Enum):
 class IngestOutcome:
     disposition: IngestDisposition
     entry_title: str = ""
-    article_id: str | None = None
-    canonical_url: str | None = None
-    candidate: DuplicateCandidate | None = None
-    canonicalization: CanonicalizationResult | None = None
-    outbox_message_id: str | None = None
+    article_id: Optional[str] = None
+    canonical_url: Optional[str] = None
+    candidate: Optional[DuplicateCandidate] = None
+    canonicalization: Optional[CanonicalizationResult] = None
+    outbox_message_id: Optional[str] = None
     detail: str = ""
 
 
@@ -85,18 +75,18 @@ class IngestOutcome:
 class IngestReport:
     source_id: str = ""
     started_at: datetime = field(
-        default_factory=lambda: datetime.now(UTC))
-    completed_at: datetime | None = None
+        default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: Optional[datetime] = None
     entries_seen: int = 0
-    outcomes: list[IngestOutcome] = field(default_factory=list)
-    error: str | None = None
+    outcomes: List[IngestOutcome] = field(default_factory=list)
+    error: Optional[str] = None
 
     @property
     def ok(self) -> bool:
         return self.error is None
 
-    def counts(self) -> dict[str, int]:
-        result: dict[str, int] = {}
+    def counts(self) -> Dict[str, int]:
+        result: Dict[str, int] = {}
         for outcome in self.outcomes:
             key = outcome.disposition.value
             result[key] = result.get(key, 0) + 1
@@ -122,7 +112,7 @@ class IngestionPipeline:
         self,
         store: WorldStore,
         fetcher: Fetcher,
-        policy: IngestionPolicy | None = None,
+        policy: Optional[IngestionPolicy] = None,
     ):
         self.store = store
         self.fetcher = fetcher
@@ -142,11 +132,11 @@ class IngestionPipeline:
             entries = adapter.parse_response(result)
         except AdapterError as exc:
             report.error = f"{exc.category}: {exc.detail}"
-            report.completed_at = datetime.now(UTC)
+            report.completed_at = datetime.now(timezone.utc)
             return report
         except Exception as exc:
             report.error = f"unexpected: {exc}"
-            report.completed_at = datetime.now(UTC)
+            report.completed_at = datetime.now(timezone.utc)
             return report
 
         report.entries_seen = len(entries)
@@ -164,7 +154,7 @@ class IngestionPipeline:
                                        IngestDisposition.FLAGGED):
                 existing = await self._existing_articles()
 
-        report.completed_at = datetime.now(UTC)
+        report.completed_at = datetime.now(timezone.utc)
         return report
 
     # ── one entry ────────────────────────────────────────
@@ -173,14 +163,13 @@ class IngestionPipeline:
         self,
         source: Source,
         entry: NormalizedEntry,
-        existing: list[ExistingArticle],
+        existing: List[ExistingArticle],
     ) -> IngestOutcome:
         if not entry.link:
             return IngestOutcome(
                 disposition=IngestDisposition.SKIPPED_NO_URL,
                 entry_title=entry.title,
-                detail="entry has no link
-                nothing to capture",
+                detail="entry has no link; nothing to capture",
             )
 
         canonical = canonicalize_url(
@@ -253,7 +242,7 @@ class IngestionPipeline:
         try:
             body_text = await enrich_with_body(self.fetcher, entry.link)
         except Exception as exc:
-            logging.getLogger(__name__).warning(
+            import logging; logging.getLogger(__name__).warning(
                 "body enrichment failed for %s: %s", entry.link, exc)
             body_text = None
         normalized = body_text or entry.content or entry.summary
@@ -442,7 +431,7 @@ class IngestionPipeline:
 
     # ── helpers ──────────────────────────────────────────
 
-    async def _existing_articles(self) -> list[ExistingArticle]:
+    async def _existing_articles(self) -> List[ExistingArticle]:
         articles = await self.store.list_articles()
         return [
             ExistingArticle(
@@ -455,19 +444,19 @@ class IngestionPipeline:
             for a in articles
         ]
 
-    async def pending_work(self) -> list[dict[str, Any]]:
+    async def pending_work(self) -> List[Dict[str, Any]]:
         """Outbox rows awaiting the knowledge compiler (recovery source)."""
         return await self.store.pending_outbox()
 
 
-def _iso(value: datetime | None) -> str | None:
+def _iso(value: Optional[datetime]) -> Optional[str]:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return value.astimezone(UTC).isoformat()
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 
-def _json(value: dict[str, Any]) -> str:
+def _json(value: Dict[str, Any]) -> str:
     import json
     return json.dumps(value, default=str)

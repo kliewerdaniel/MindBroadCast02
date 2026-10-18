@@ -16,19 +16,13 @@ affected derived objects, never the whole graph.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from ..models import (
-    Article,
-    Claim,
-    ClaimEvidence,
-    ClaimStatus,
-    Entity,
-    Event,
-    Evidence,
-    EvidenceRelationship,
-    ExtractionStatus,
+    Claim, ClaimType, ClaimStatus, Evidence, ClaimEvidence, Entity,
+    EntityType, EntityStatus, Event, EventStatus, Source, Article,
+    EvidenceRelationship, ExtractionStatus,
 )
 from ..persistence import WorldStore, content_hash
 from .claims import ClaimExtractionResult, ExtractedClaim
@@ -40,19 +34,19 @@ from .structural import NormalizedDocument
 @dataclass
 class IntegrationResult:
     article_id: str
-    claim_ids: list[str] = field(default_factory=list)
-    evidence_ids: list[str] = field(default_factory=list)
-    link_ids: list[str] = field(default_factory=list)
-    entity_ids: list[str] = field(default_factory=list)
-    unresolved_entities: list[str] = field(default_factory=list)
-    event_ids: list[str] = field(default_factory=list)
+    claim_ids: List[str] = field(default_factory=list)
+    evidence_ids: List[str] = field(default_factory=list)
+    link_ids: List[str] = field(default_factory=list)
+    entity_ids: List[str] = field(default_factory=list)
+    unresolved_entities: List[str] = field(default_factory=list)
+    event_ids: List[str] = field(default_factory=list)
     contradiction_count: int = 0
-    outbox_message_id: str | None = None
+    outbox_message_id: Optional[str] = None
     status: str = "succeeded"          # succeeded | partial | failed
-    incomplete_reason: str | None = None
+    incomplete_reason: Optional[str] = None
     pass_name: str = "knowledge_integration"
     pass_version: str = "1.0.0"
-    completed_at: datetime | None = None
+    completed_at: Optional[datetime] = None
 
     @property
     def ok(self) -> bool:
@@ -79,8 +73,8 @@ class KnowledgeIntegrator:
         claims: ClaimExtractionResult,
         entities: EntityExtractionResult,
         evidence: EvidenceExtractionResult,
-        events: list[Event] | None = None,
-        contradictions: list[Any] | None = None,
+        events: Optional[List[Event]] = None,
+        contradictions: Optional[List[Any]] = None,
         schedule_downstream: bool = True,
     ) -> IntegrationResult:
         """Commit every extracted object in one transaction.
@@ -178,7 +172,7 @@ class KnowledgeIntegrator:
             result.incomplete_reason = f"integration failed: {exc}"
             return result
 
-        result.completed_at = datetime.now(UTC)
+        result.completed_at = datetime.now(timezone.utc)
         if result.unresolved_entities:
             # Partial in a specific, reported sense: claims and evidence are
             # complete, but some entity mentions could not be resolved and
@@ -298,7 +292,7 @@ class KnowledgeIntegrator:
             claim_id=claim_id, evidence_id=evidence_id,
             relationship_type=relationship,
             assessment_method="structural",
-            assessed_at=datetime.now(UTC),
+            assessed_at=datetime.now(timezone.utc),
         )
         conn.execute(
             """INSERT INTO claim_evidence
@@ -319,7 +313,7 @@ class KnowledgeIntegrator:
         )
         return link.id
 
-    def _resolve_entity(self, conn, mention: EntityMention) -> str | None:
+    def _resolve_entity(self, conn, mention: EntityMention) -> Optional[str]:
         """Deterministic resolution only.
 
         An exact canonical-name + type match resolves automatically. Anything
@@ -339,14 +333,14 @@ class KnowledgeIntegrator:
         if row is not None:
             conn.execute(
                 "UPDATE entities SET last_observed_at = ? WHERE id = ?",
-                (_iso(datetime.now(UTC)), row[0]))
+                (_iso(datetime.now(timezone.utc)), row[0]))
             return row[0]
 
         entity = Entity(
             canonical_name=mention.text,
             entity_type=mention.entity_type,
-            first_observed_at=datetime.now(UTC),
-            last_observed_at=datetime.now(UTC),
+            first_observed_at=datetime.now(timezone.utc),
+            last_observed_at=datetime.now(timezone.utc),
             metadata_json={
                 "extraction_method": mention.extraction_method,
                 "extraction_version": mention.extraction_version,
@@ -420,19 +414,19 @@ class KnowledgeIntegrator:
             (
                 _new_id(), "DerivedObjectsRegistered", "article", article_id,
                 self.store.db.next_sequence(),
-                _iso(datetime.now(UTC)),
-                _iso(datetime.now(UTC)),
+                _iso(datetime.now(timezone.utc)),
+                _iso(datetime.now(timezone.utc)),
                 "system", "system", 1, _json(inputs),
             ),
         )
 
 
-def _iso(value: datetime | None) -> str | None:
+def _iso(value: Optional[datetime]) -> Optional[str]:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return value.astimezone(UTC).isoformat()
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def _json(value: Any) -> str:

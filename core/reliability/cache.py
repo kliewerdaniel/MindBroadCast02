@@ -17,16 +17,16 @@ match.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 @dataclass
 class CacheEntry:
     key: str
     value: Any
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    invalidated_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    invalidated_at: Optional[datetime] = None
 
     @property
     def is_valid(self) -> bool:
@@ -41,9 +41,9 @@ class SummaryCache:
     """
 
     def __init__(self):
-        self._entries: dict[str, CacheEntry] = {}
-        self._story_to_keys: dict[str, set[str]] = {}
-        self.invalidation_log: list[tuple[str, str]] = []
+        self._entries: Dict[str, CacheEntry] = {}
+        self._story_to_keys: Dict[str, Set[str]] = {}
+        self.invalidation_log: List[Tuple[str, str]] = []
 
     def put(self, story_id: str, snapshot_id: str, summary: str) -> str:
         key = f"{story_id}:{snapshot_id}"
@@ -51,7 +51,7 @@ class SummaryCache:
         self._story_to_keys.setdefault(story_id, set()).add(key)
         return key
 
-    def get(self, story_id: str, snapshot_id: str) -> str | None:
+    def get(self, story_id: str, snapshot_id: str) -> Optional[str]:
         entry = self._entries.get(f"{story_id}:{snapshot_id}")
         if entry is None or not entry.is_valid:
             return None
@@ -60,7 +60,7 @@ class SummaryCache:
     def invalidate_story(self, story_id: str, reason: str) -> int:
         """§23.4: a material claim change or correction invalidates the summary."""
         count = 0
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         for key in self._story_to_keys.get(story_id, set()):
             entry = self._entries.get(key)
             if entry is not None and entry.is_valid:
@@ -72,7 +72,7 @@ class SummaryCache:
     def invalidate_snapshot(self, snapshot_id: str, reason: str) -> int:
         """§23.4: an obsolete source snapshot invalidates dependent summaries."""
         count = 0
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         for key, entry in self._entries.items():
             if snapshot_id in key and entry.is_valid:
                 entry.invalidated_at = now
@@ -113,7 +113,7 @@ class AudioCache:
     """
 
     def __init__(self):
-        self._store: dict[str, tuple[AudioCacheKey, bytes]] = {}
+        self._store: Dict[str, Tuple[AudioCacheKey, bytes]] = {}
         self.hits = 0
         self.misses = 0
 
@@ -125,7 +125,7 @@ class AudioCache:
         self._store[self._key(key)] = (key, audio)
         return self._key(key)
 
-    def get(self, requested: AudioCacheKey) -> bytes | None:
+    def get(self, requested: AudioCacheKey) -> Optional[bytes]:
         entry = self._store.get(self._key(requested))
         if entry is None:
             self.misses += 1
@@ -152,9 +152,9 @@ class EntityResolutionCache:
 
     def __init__(self, max_size: int = 10000):
         self.max_size = max_size
-        self._store: dict[str, Any] = {}
+        self._store: Dict[str, Any] = {}
 
-    def get(self, surface_form: str) -> Any | None:
+    def get(self, surface_form: str) -> Optional[Any]:
         return self._store.get(surface_form.lower())
 
     def put(self, surface_form: str, candidates: Any) -> None:

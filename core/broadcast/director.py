@@ -14,18 +14,12 @@ APPROVED and the media subsystem retries.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 from .entities import (
-    AudioChunk,
-    BroadcastSession,
-    ContentState,
-    InterruptionAction,
-    PlaybackState,
-    Segment,
-    SegmentStatus,
-    SegmentTransitionError,
+    AudioChunk, BroadcastSession, ContentState, InterruptionAction,
+    PlaybackState, Segment, SegmentStatus, SegmentTransitionError,
     ValidationOutcome,
 )
 
@@ -43,10 +37,10 @@ class Interruption:
     action: InterruptionAction
     reason: str = ""
     stopped_at_sequence: int = 0
-    completed_its_point: bool | None = None
+    completed_its_point: Optional[bool] = None
     resume_later: bool = False
-    abandoned_audio_chunks: list[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    abandoned_audio_chunks: List[str] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DirectorError(Exception):
@@ -64,18 +58,18 @@ class InvalidState(DirectorError):
 class BroadcastDirector:
     """§13. Stateful controller of one broadcast session."""
 
-    def __init__(self, session: BroadcastSession | None = None):
+    def __init__(self, session: Optional[BroadcastSession] = None):
         self.session = session or BroadcastSession()
-        self.segments: dict[str, Segment] = {}
-        self.queue: list[str] = []               # segment ids in play order
-        self.interruptions: dict[str, Interruption] = {}
+        self.segments: Dict[str, Segment] = {}
+        self.queue: List[str] = []               # segment ids in play order
+        self.interruptions: Dict[str, Interruption] = {}
         # Chunks keyed by segment id; each entry is that segment's generation.
-        self.audio: dict[str, list[AudioChunk]] = {}
-        self.history: list[dict[str, Any]] = []
+        self.audio: Dict[str, List[AudioChunk]] = {}
+        self.history: List[Dict[str, Any]] = []
 
     # ── §13.2 session state ───────────────────────────────────────────
 
-    def persistable_state(self) -> dict[str, Any]:
+    def persistable_state(self) -> Dict[str, Any]:
         """§13.2. The state needed to recover after process termination.
 
         In-memory buffers may be lost in a crash. This is what must survive:
@@ -111,7 +105,7 @@ class BroadcastDirector:
         }
 
     @classmethod
-    def recover(cls, state: dict[str, Any]) -> "BroadcastDirector":
+    def recover(cls, state: Dict[str, Any]) -> "BroadcastDirector":
         """§13.2. Rebuild a director from persisted state.
 
         A segment that was PLAYING when the process died is not silently
@@ -154,7 +148,7 @@ class BroadcastDirector:
     def add_segment(self, segment: Segment) -> str:
         self.segments[segment.id] = segment
         self.history.append({
-            "at": datetime.now(UTC).isoformat(),
+            "at": datetime.now(timezone.utc).isoformat(),
             "event": "segment_proposed",
             "segment_id": segment.id,
         })
@@ -178,7 +172,7 @@ class BroadcastDirector:
                 f"{target.value}")
         segment.transition_to(target)
         self.history.append({
-            "at": datetime.now(UTC).isoformat(),
+            "at": datetime.now(timezone.utc).isoformat(),
             "event": f"segment_{target.value}",
             "segment_id": segment_id,
         })
@@ -241,7 +235,7 @@ class BroadcastDirector:
             self.queue.append(segment_id)
             self.advance(segment_id, SegmentStatus.QUEUED)
 
-    def next_segment_id(self) -> str | None:
+    def next_segment_id(self) -> Optional[str]:
         return self.queue[0] if self.queue else None
 
     def begin_playback(self, segment_id: str) -> None:
@@ -327,7 +321,7 @@ class BroadcastDirector:
         segment_id: str,
         reason: str = "",
         stopped_at_sequence: int = 0,
-        completed_its_point: bool | None = None,
+        completed_its_point: Optional[bool] = None,
         resume_later: bool = False,
     ) -> Interruption:
         """§13.5. Abandon the current segment and record what happened.
@@ -390,7 +384,7 @@ class BroadcastDirector:
         self.audio.setdefault(segment_id, []).append(chunk)
         self.audio[segment_id].sort(key=lambda c: c.sequence)
 
-    def deliverable_chunks(self, segment_id: str) -> list[AudioChunk]:
+    def deliverable_chunks(self, segment_id: str) -> List[AudioChunk]:
         """Chunks safe to deliver: current generation only (§13.5)."""
         segment = self.get_segment(segment_id)
         return [c for c in self.audio.get(segment_id, [])

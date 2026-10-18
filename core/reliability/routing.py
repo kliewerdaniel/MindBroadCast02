@@ -19,14 +19,14 @@ interstitial. An infinite broadcast is a continuously available programming
 system, not an infinite stream of fabricated novelty."
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 from ..broadcast.providers import (
+    LanguageModelProvider, ProviderCapabilities, StubLanguageModelProvider,
     TASK_CAPABILITY_MAP,
-    LanguageModelProvider,
-    ProviderCapabilities,
-    StubLanguageModelProvider,
 )
 
 
@@ -48,7 +48,7 @@ class RouteChoice(Enum):
 class RoutingDecision:
     task_type: str
     choice: RouteChoice
-    provider_id: str | None = None
+    provider_id: Optional[str] = None
     reason: str = ""
     downgraded: bool = False        # §23.5: never silently true
 
@@ -57,10 +57,10 @@ class ResourceAwareRouter:
     """§23.5. Routes by task requirement and resource state; never silently
     downgrades quality."""
 
-    def __init__(self, providers: dict[str, LanguageModelProvider] | None = None):
+    def __init__(self, providers: Optional[Dict[str, LanguageModelProvider]] = None):
         self.providers = providers or {"local": StubLanguageModelProvider()}
         self.resource_state = ResourceState.AVAILABLE
-        self.decisions: list[RoutingDecision] = []
+        self.decisions: List[RoutingDecision] = []
 
     def set_resource_state(self, state: ResourceState) -> None:
         self.resource_state = state

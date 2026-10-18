@@ -6,8 +6,10 @@ Import and call `configure_logging()` once at startup.
 
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Error counter for /api/health exposure.
 _error_counts: dict = {}
@@ -41,7 +43,7 @@ def reset_error_counts() -> None:
 
 
 def configure_logging(
-    data_dir: Path | None = None,
+    data_dir: Optional[Path] = None,
     level: int = logging.INFO,
     max_bytes: int = 5_000_000,
     backup_count: int = 3,

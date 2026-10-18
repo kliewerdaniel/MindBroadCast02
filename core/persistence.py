@@ -1,5 +1,3 @@
-                import logging
-                import logging
 """SQLite persistence layer for MindBroadcast.
 
 Raw sqlite3, no ORM (per prior PERSISTENCE.md decision).
@@ -7,8 +5,7 @@ Raw sqlite3, no ORM (per prior PERSISTENCE.md decision).
 Design rules (spec §6.1):
 - Foreign keys enforced on EVERY connection.
 - WAL mode for on-disk databases (concurrent readers + one writer).
-- Explicit transaction boundaries
-never hold a write transaction open across
+- Explicit transaction boundaries; never hold a write transaction open across
   network or model operations.
 - Bounded busy timeout.
 - Parameterized SQL always.
@@ -26,39 +23,22 @@ docs/PHASE_0_AUDIT.md):
 3. _close_conn had the same self.db.db_path bug plus an infinite-recursion path.
 """
 
-import hashlib
-import json
 import sqlite3
+import json
+import hashlib
+import sys
 import threading
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from .models import (
-    Article,
-    Claim,
-    ClaimEvidence,
-    ClaimFilter,
-    ClaimStatus,
-    ClaimType,
-    Correction,
-    CorrectionType,
-    Entity,
-    EntityStatus,
-    EntityType,
-    Event,
-    EventStatus,
-    Evidence,
-    EvidenceRelationship,
+    Source, OwnershipGroup, Article, Entity, Event, Story, Claim, Evidence,
+    ClaimEvidence, Correction, WorldSnapshot,
+    SourceType, EntityType, EntityStatus, EventStatus, StoryStatus,
+    ClaimType, ClaimStatus, CorrectionType, EvidenceRelationship,
     ExtractionStatus,
-    OwnershipGroup,
-    SnapshotDiff,
-    Source,
-    SourceType,
-    Story,
-    StoryFilter,
-    StoryStatus,
-    WorldSnapshot,
+    StoryFilter, ClaimFilter, SnapshotDiff,
     claim_status_from_str,
 )
 
@@ -66,20 +46,20 @@ SCHEMA_VERSION = 2
 
 
 def _utcnow() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
-def _dt_to_str(dt: datetime | None) -> str | None:
+def _dt_to_str(dt: Optional[datetime]) -> Optional[str]:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).isoformat()
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
 
 
 def _str_to_dt(
-    s: str | None, default_now: bool = False
-) -> datetime | None:
+    s: Optional[str], default_now: bool = False
+) -> Optional[datetime]:
     """Parse an ISO timestamp. Naive values are assumed UTC.
 
     With default_now=True the return is never None, for fields the domain
@@ -92,11 +72,11 @@ def _str_to_dt(
     except (ValueError, TypeError):
         return _utcnow() if default_now else None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt
 
 
-def _require_dt(s: str | None) -> datetime:
+def _require_dt(s: Optional[str]) -> datetime:
     """Non-optional variant for required timestamp fields."""
     value = _str_to_dt(s, default_now=True)
     assert value is not None  # default_now guarantees this
@@ -107,7 +87,7 @@ def _json_dumps(obj: Any) -> str:
     return json.dumps(obj, default=str)
 
 
-def _json_loads(s: str | None, default: Any = None) -> Any:
+def _json_loads(s: Optional[str], default: Any = None) -> Any:
     if not s:
         return default if default is not None else []
     try:
@@ -371,8 +351,7 @@ CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(canonical_name);
 CREATE INDEX IF NOT EXISTS idx_corrections_target ON corrections(target_type, target_id);
-CREATE INDEX IF NOT EXISTS idx_domain_events_aggregate ON domain_events(aggregate_type,
-    ggregate_id);
+CREATE INDEX IF NOT EXISTS idx_domain_events_aggregate ON domain_events(aggregate_type, aggregate_id);
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_messages(published_at);
 
 -- Append-only enforcement (spec §3.3, §6.3).
@@ -466,7 +445,7 @@ class Database:
 
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self._conn: sqlite3.Connection | None = None
+        self._conn: Optional[sqlite3.Connection] = None
         self._lock = threading.RLock()
         self._sequence = 0
         if db_path != ":memory:":
@@ -497,7 +476,7 @@ class Database:
                 self._conn = conn
             return self._conn
 
-    def _quarantine_and_recreate(self) -> str | None:
+    def _quarantine_and_recreate(self) -> Optional[str]:
         """Move a corrupt database aside and start a fresh one.
 
         A malformed file must not make the app unusable: the world model is
@@ -508,7 +487,7 @@ class Database:
         if self.db_path == ":memory:":
             return None
         self.close()
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         moved = []
         for suffix in ("", "-wal", "-shm"):
             src = Path(str(self.db_path) + suffix)
@@ -525,8 +504,7 @@ class Database:
         """True when SQLite reports the file is structurally sound.
 
         PRAGMA integrity_check returns 'ok' as a single row when the file is
-        good
-        anything else (a list of broken pages) means corruption. A file
+        good; anything else (a list of broken pages) means corruption. A file
         damaged badly enough that the pragma itself raises counts as corrupt.
         """
         if self.db_path == ":memory:":
@@ -570,9 +548,8 @@ class Database:
                 if quarantine is None:
                     raise sqlite3.DatabaseError(
                         "database is corrupt and could not be moved aside")
-                logging.getLogger(__name__).warning(
-                    "[persistence] database was corrupt
-                    moved to %s and starting fresh",
+                import logging; logging.getLogger(__name__).warning(
+                    "[persistence] database was corrupt; moved to %s and starting fresh",
                     quarantine)
                 conn = self.connect()
             try:
@@ -581,9 +558,8 @@ class Database:
                 quarantine = self._quarantine_and_recreate()
                 if quarantine is None:
                     raise
-                logging.getLogger(__name__).warning(
-                    "[persistence] database was unreadable (%s)
-                    "
+                import logging; logging.getLogger(__name__).warning(
+                    "[persistence] database was unreadable (%s); "
                     "moved to %s and starting fresh", error, quarantine)
                 conn = self.connect()
                 conn.executescript(CREATE_TABLES_SQL)
@@ -667,10 +643,10 @@ class WorldStore:
         event_type: str,
         aggregate_type: str,
         aggregate_id: str,
-        payload: dict[str, Any],
-        occurred_at: datetime | None = None,
-        correlation_id: str | None = None,
-        causation_id: str | None = None,
+        payload: Dict[str, Any],
+        occurred_at: Optional[datetime] = None,
+        correlation_id: Optional[str] = None,
+        causation_id: Optional[str] = None,
     ) -> str:
         """Insert a domain event inside the caller's transaction."""
         from uuid import uuid4
@@ -692,7 +668,7 @@ class WorldStore:
         )
         return event_id
 
-    def check_idempotency(self, key: str) -> str | None:
+    def check_idempotency(self, key: str) -> Optional[str]:
         """Return a prior result_id for this key, or None."""
         conn = self.db.connect()
         row = conn.execute(
@@ -732,11 +708,9 @@ class WorldStore:
                 )
             return group.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add ownership group: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add ownership group: {e}")
 
-    async def get_ownership_group(self, group_id: str) -> OwnershipGroup | None:
+    async def get_ownership_group(self, group_id: str) -> Optional[OwnershipGroup]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT id, name, created_at FROM ownership_groups WHERE id = ?",
@@ -780,24 +754,21 @@ class WorldStore:
                 )
             return source.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add source: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add source: {e}")
 
-    async def get_source(self, source_id: str) -> Source | None:
+    async def get_source(self, source_id: str) -> Optional[Source]:
         conn = self.db.connect()
         row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_source(row)
 
-    async def find_source_by_endpoint(self, endpoint: str) -> Source | None:
+    async def find_source_by_endpoint(self, endpoint: str) -> Optional[Source]:
         """The existing source with this endpoint, or None.
 
         Registration is idempotent on endpoint: re-registering the same feed
         returns the existing row rather than creating a duplicate. The endpoint
-        is the stable identity of a source
-        the display name may change.
+        is the stable identity of a source; the display name may change.
         """
         conn = self.db.connect()
         row = conn.execute(
@@ -806,7 +777,7 @@ class WorldStore:
             return None
         return self._row_to_source(row)
 
-    async def list_sources(self, enabled_only: bool = False) -> list[Source]:
+    async def list_sources(self, enabled_only: bool = False) -> List[Source]:
         conn = self.db.connect()
         query = "SELECT * FROM sources"
         if enabled_only:
@@ -884,8 +855,7 @@ class WorldStore:
             (source_id,)).fetchone()
         if row is not None and row["n"]:
             raise PersistenceError(
-                f"source {source_id} has {row['n']} article(s)
-                disable it "
+                f"source {source_id} has {row['n']} article(s); disable it "
                 f"instead of deleting, or the world model loses provenance")
         with self.db.transaction():
             cursor = conn.execute("DELETE FROM sources WHERE id = ?",
@@ -955,25 +925,23 @@ class WorldStore:
                 )
             return article.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add article: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add article: {e}")
 
-    async def get_article(self, article_id: str) -> Article | None:
+    async def get_article(self, article_id: str) -> Optional[Article]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM articles WHERE id = ?", (article_id,)
         ).fetchone()
         return self._row_to_article(row) if row else None
 
-    async def get_article_by_hash(self, hash_value: str) -> Article | None:
+    async def get_article_by_hash(self, hash_value: str) -> Optional[Article]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM articles WHERE content_hash = ? LIMIT 1", (hash_value,)
         ).fetchone()
         return self._row_to_article(row) if row else None
 
-    async def get_article_by_url(self, canonical_url: str) -> Article | None:
+    async def get_article_by_url(self, canonical_url: str) -> Optional[Article]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM articles WHERE canonical_url = ? LIMIT 1",
@@ -983,14 +951,14 @@ class WorldStore:
 
     async def list_articles(
         self,
-        source_id: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        limit: int | None = None,
-    ) -> list[Article]:
+        source_id: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+        limit: Optional[int] = None,
+    ) -> List[Article]:
         conn = self.db.connect()
         query = "SELECT * FROM articles WHERE 1=1"
-        params: list[Any] = []
+        params: List[Any] = []
         if source_id:
             query += " AND source_id = ?"
             params.append(source_id)
@@ -1040,7 +1008,7 @@ class WorldStore:
             )
         return new_id
 
-    async def get_article_versions(self, article_id: str) -> list[Article]:
+    async def get_article_versions(self, article_id: str) -> List[Article]:
         """All versions in a chain, oldest first.
 
         Walks backwards from the given version to the root, then orders by
@@ -1131,11 +1099,9 @@ class WorldStore:
                 )
             return result_id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add entity: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add entity: {e}")
 
-    async def get_entity(self, entity_id: str) -> Entity | None:
+    async def get_entity(self, entity_id: str) -> Optional[Entity]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM entities WHERE id = ?", (entity_id,)
@@ -1143,8 +1109,8 @@ class WorldStore:
         return self._row_to_entity(row) if row else None
 
     async def find_entity_by_name(
-        self, name: str, entity_type: EntityType | None = None
-    ) -> Entity | None:
+        self, name: str, entity_type: Optional[EntityType] = None
+    ) -> Optional[Entity]:
         conn = self.db.connect()
         if entity_type:
             row = conn.execute(
@@ -1160,11 +1126,11 @@ class WorldStore:
         return self._row_to_entity(row) if row else None
 
     async def list_entities(
-        self, entity_type: EntityType | None = None
-    ) -> list[Entity]:
+        self, entity_type: Optional[EntityType] = None
+    ) -> List[Entity]:
         conn = self.db.connect()
         query = "SELECT * FROM entities"
-        params: list[Any] = []
+        params: List[Any] = []
         if entity_type:
             query += " WHERE entity_type = ?"
             params.append(entity_type.value)
@@ -1178,8 +1144,7 @@ class WorldStore:
     async def merge_entities(self, survivor_id: str, absorbed_id: str) -> str:
         """Merge two entities. An explicit, recorded, reversible operation (§5.4).
 
-        Embedding similarity may propose a merge
-        it never authorizes one.
+        Embedding similarity may propose a merge; it never authorizes one.
         """
         conn = self.db.connect()
         with self.db.transaction():
@@ -1245,21 +1210,19 @@ class WorldStore:
                 )
             return event.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add event: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add event: {e}")
 
-    async def get_event(self, event_id: str) -> Event | None:
+    async def get_event(self, event_id: str) -> Optional[Event]:
         conn = self.db.connect()
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return self._row_to_event(row) if row else None
 
     async def list_events(
-        self, status: EventStatus | None = None
-    ) -> list[Event]:
+        self, status: Optional[EventStatus] = None
+    ) -> List[Event]:
         conn = self.db.connect()
         query = "SELECT * FROM events"
-        params: list[Any] = []
+        params: List[Any] = []
         if status:
             query += " WHERE status = ?"
             params.append(status.value)
@@ -1319,21 +1282,19 @@ class WorldStore:
                 )
             return story.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add story: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add story: {e}")
 
-    async def get_story(self, story_id: str) -> Story | None:
+    async def get_story(self, story_id: str) -> Optional[Story]:
         conn = self.db.connect()
         row = conn.execute("SELECT * FROM stories WHERE id = ?", (story_id,)).fetchone()
         return self._row_to_story(row) if row else None
 
     async def list_stories(
-        self, filter: StoryFilter | None = None
-    ) -> list[Story]:
+        self, filter: Optional[StoryFilter] = None
+    ) -> List[Story]:
         conn = self.db.connect()
         query = "SELECT * FROM stories WHERE 1=1"
-        params: list[Any] = []
+        params: List[Any] = []
         if filter:
             if filter.status:
                 query += " AND status = ?"
@@ -1444,21 +1405,19 @@ class WorldStore:
                 )
             return claim.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add claim: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add claim: {e}")
 
-    async def get_claim(self, claim_id: str) -> Claim | None:
+    async def get_claim(self, claim_id: str) -> Optional[Claim]:
         conn = self.db.connect()
         row = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
         return self._row_to_claim(row) if row else None
 
     async def list_claims(
-        self, filter: ClaimFilter | None = None
-    ) -> list[Claim]:
+        self, filter: Optional[ClaimFilter] = None
+    ) -> List[Claim]:
         conn = self.db.connect()
         query = "SELECT * FROM claims WHERE 1=1"
-        params: list[Any] = []
+        params: List[Any] = []
         if filter:
             if filter.status:
                 query += " AND epistemic_status = ?"
@@ -1479,11 +1438,10 @@ class WorldStore:
         conn = self.db.connect()
         return conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
 
-    async def claim_article_ids(self) -> dict[str, str]:
+    async def claim_article_ids(self) -> Dict[str, str]:
         """Map claim_id -> the article it was observed in, via evidence.
 
-        A claim carries no article column
-        the durable link is
+        A claim carries no article column; the durable link is
         claim -> claim_evidence -> evidence.article_id (§5.6/§5.7). Returns the
         first observed article per claim (a claim corroborated by several
         articles is attributed to one for clustering). Used to keep facts from
@@ -1595,11 +1553,9 @@ class WorldStore:
                 )
             return evidence.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add evidence: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add evidence: {e}")
 
-    async def get_evidence(self, evidence_id: str) -> Evidence | None:
+    async def get_evidence(self, evidence_id: str) -> Optional[Evidence]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM evidence WHERE id = ?", (evidence_id,)
@@ -1608,8 +1564,8 @@ class WorldStore:
 
     async def get_evidence_for_claim(
         self, claim_id: str,
-        relationship: EvidenceRelationship | None = None,
-    ) -> list[Evidence]:
+        relationship: Optional[EvidenceRelationship] = None,
+    ) -> List[Evidence]:
         """Evidence associated with a claim, optionally filtered by relationship."""
         conn = self.db.connect()
         if relationship:
@@ -1630,7 +1586,7 @@ class WorldStore:
             ).fetchall()
         return [self._row_to_evidence(r) for r in rows]
 
-    async def list_evidence(self, source_id: str | None = None) -> list[Evidence]:
+    async def list_evidence(self, source_id: Optional[str] = None) -> List[Evidence]:
         conn = self.db.connect()
         if source_id:
             rows = conn.execute(
@@ -1669,7 +1625,7 @@ class WorldStore:
         claim_id: str,
         evidence_id: str,
         relationship: EvidenceRelationship,
-        assessment: str | None = None,
+        assessment: Optional[str] = None,
         assessment_method: str = "",
     ) -> str:
         """Associate evidence with a claim under a specific relationship.
@@ -1708,11 +1664,9 @@ class WorldStore:
                 )
             return link.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to link evidence: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to link evidence: {e}")
 
-    async def get_evidence_links(self, claim_id: str) -> list[ClaimEvidence]:
+    async def get_evidence_links(self, claim_id: str) -> List[ClaimEvidence]:
         conn = self.db.connect()
         rows = conn.execute(
             """SELECT * FROM claim_evidence WHERE claim_id = ?
@@ -1778,11 +1732,9 @@ class WorldStore:
                 )
             return correction.id
         except sqlite3.IntegrityError as e:
-            raise PersistenceError(f"Failed to add correction: {e}") from except
-                qlite3.IntegrityError as e:
             raise PersistenceError(f"Failed to add correction: {e}")
 
-    async def get_correction(self, correction_id: str) -> Correction | None:
+    async def get_correction(self, correction_id: str) -> Optional[Correction]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM corrections WHERE id = ?", (correction_id,)
@@ -1791,7 +1743,7 @@ class WorldStore:
 
     async def get_corrections_for(
         self, target_type: str, target_id: str
-    ) -> list[Correction]:
+    ) -> List[Correction]:
         conn = self.db.connect()
         rows = conn.execute(
             """SELECT * FROM corrections WHERE target_type = ? AND target_id = ?
@@ -1801,11 +1753,11 @@ class WorldStore:
         return [self._row_to_correction(r) for r in rows]
 
     async def list_corrections(
-        self, correction_type: CorrectionType | None = None
-    ) -> list[Correction]:
+        self, correction_type: Optional[CorrectionType] = None
+    ) -> List[Correction]:
         conn = self.db.connect()
         query = "SELECT * FROM corrections"
-        params: list[Any] = []
+        params: List[Any] = []
         if correction_type:
             query += " WHERE correction_type = ?"
             params.append(correction_type.value)
@@ -1835,7 +1787,7 @@ class WorldStore:
     # ── snapshots ────────────────────────────────────────
 
     async def create_snapshot(
-        self, artifact_dir: str | None = None
+        self, artifact_dir: Optional[str] = None
     ) -> WorldSnapshot:
         """Capture world state atomically.
 
@@ -1977,14 +1929,14 @@ class WorldStore:
             snapshot.metadata_json["artifact_content_hash"] = digest
         return str(final)
 
-    async def get_snapshot(self, snapshot_id: str) -> WorldSnapshot | None:
+    async def get_snapshot(self, snapshot_id: str) -> Optional[WorldSnapshot]:
         conn = self.db.connect()
         row = conn.execute(
             "SELECT * FROM world_snapshots WHERE id = ?", (snapshot_id,)
         ).fetchone()
         return self._row_to_snapshot(row) if row else None
 
-    async def list_snapshots(self) -> list[WorldSnapshot]:
+    async def list_snapshots(self) -> List[WorldSnapshot]:
         conn = self.db.connect()
         rows = conn.execute(
             "SELECT * FROM world_snapshots ORDER BY created_at DESC"
@@ -2058,14 +2010,14 @@ class WorldStore:
 
     async def list_domain_events(
         self,
-        aggregate_type: str | None = None,
-        aggregate_id: str | None = None,
-        event_type: str | None = None,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+        aggregate_type: Optional[str] = None,
+        aggregate_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         conn = self.db.connect()
         query = "SELECT * FROM domain_events WHERE 1=1"
-        params: list[Any] = []
+        params: List[Any] = []
         if aggregate_type:
             query += " AND aggregate_type = ?"
             params.append(aggregate_type)
@@ -2097,7 +2049,7 @@ class WorldStore:
         conn = self.db.connect()
         return conn.execute("SELECT COUNT(*) FROM domain_events").fetchone()[0]
 
-    async def enqueue_outbox(self, message_type: str, payload: dict[str, Any]) -> str:
+    async def enqueue_outbox(self, message_type: str, payload: Dict[str, Any]) -> str:
         """Queue work for the dispatcher.
 
         The docstring contract is "inside the caller's transaction", but this
@@ -2119,7 +2071,7 @@ class WorldStore:
         return message_id
 
     def enqueue_outbox_in(
-        self, conn: sqlite3.Connection, message_type: str, payload: dict[str, Any]
+        self, conn: sqlite3.Connection, message_type: str, payload: Dict[str, Any]
     ) -> str:
         """Insert an outbox row on a caller-owned transaction connection.
 
@@ -2134,7 +2086,7 @@ class WorldStore:
         )
         return message_id
 
-    async def pending_outbox(self) -> list[dict[str, Any]]:
+    async def pending_outbox(self) -> List[Dict[str, Any]]:
         conn = self.db.connect()
         rows = conn.execute(
             """SELECT * FROM outbox_messages WHERE published_at IS NULL

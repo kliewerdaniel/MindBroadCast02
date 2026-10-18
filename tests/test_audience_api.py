@@ -8,49 +8,33 @@ auto-answered, feedback is never treated as truth, chain-of-thought never
 reaches the audit view, and generated text is never shown as spoken.
 """
 
-from datetime import UTC, datetime, timedelta
-
 import pytest
+from datetime import datetime, timezone, timedelta
 
 from core.api.contracts import (
-    ApiResponse,
-    not_found,
-    rate_limited,
-    unauthorized,
-    validation_error,
-)
-from core.api.endpoints import build_router
-from core.api.events import EventStore, EventType
-from core.api.operator import (
-    AccessibilityPreferences,
-    ConfirmationRequired,
-    ControlStatus,
-    OperatorConsole,
-    status_is_not_color_encoded,
+    ApiError, ApiResponse, ErrorCode, HealthStatus, not_found, rate_limited,
+    unauthorized, validation_error,
 )
 from core.api.router import ApiRequest, Router
+from core.api.endpoints import build_router
+from core.api.events import EventStore, EventStream, EventType
 from core.api.show_analysis import (
-    FORBIDDEN_KEYS,
-    ShowAnalysis,
-    ShowAnalysisBuilder,
+    FORBIDDEN_KEYS, ShowAnalysis, ShowAnalysisBuilder,
 )
 from core.api.transcript import (
-    SegmentDeliveryState,
-    TranscriptService,
+    SegmentDeliveryState, TranscriptEntry, TranscriptService,
+)
+from core.api.operator import (
+    AccessibilityPreferences, ConfirmationRequired, ControlKind,
+    ControlStatus, OperatorConsole, status_is_not_color_encoded,
 )
 from core.audience.messages import (
-    AbuseClassifier,
-    FeedbackCollector,
-    FeedbackSignal,
-    ListenerMessage,
-    MessagePipeline,
-    MessageType,
-    ModerationStatus,
-    ProcessingStatus,
-    RateLimiter,
+    AbuseAssessment, AbuseClassifier, FeedbackCollector, FeedbackSignal,
+    ListenerMessage, MessagePipeline, MessageType, ModerationStatus,
+    ProcessingStatus, RateLimiter, RateLimitDecision,
 )
 
-NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
 
 
 def request(method="GET", path="/api/v1/health", authenticated=False, **kw):
@@ -213,7 +197,7 @@ class TestEventStream:
 
     def test_retention_bound(self):
         store = EventStore(retention=5)
-        for _i in range(20):
+        for i in range(20):
             store.emit(EventType.TRANSCRIPT_TURN_ADDED)
         assert store.count() == 5
 
@@ -513,7 +497,8 @@ class TestShowAnalysis:
         assert "raw_prompt" in FORBIDDEN_KEYS
 
     def test_selection_factors_from_ranking(self):
-        from core.world_model.ranking import StoryFacts, StoryRanker
+        from core.world_model.ranking import (
+            StoryRanker, StoryFacts, FactorValue)
         ranker = StoryRanker()
         result = ranker.rank(StoryFacts(story_id="s", now=NOW))
         analysis = ShowAnalysisBuilder().build(
@@ -550,8 +535,8 @@ class TestShowAnalysis:
 
 
 def _fake_report():
-    from core.broadcast.entities import ValidationOutcome
     from core.broadcast.validation import ValidationReport
+    from core.broadcast.entities import ValidationOutcome
     return ValidationReport(outcome=ValidationOutcome.APPROVED)
 
 

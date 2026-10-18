@@ -8,20 +8,15 @@ adapter never opens a socket itself — it goes through a Fetcher.
 explicitly configured transport can never reach the network by accident.
 """
 
+import asyncio
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Dict, List, Optional, Protocol
 
 from .adapters import FetchResult
 from .security import (
-    FetchError,
-    FetchLimits,
-    SecurityViolation,
-    URLRejection,
+    URLRejection, FetchLimits, FetchError, SecurityViolation, validate_url,
+    validate_redirect, is_redirect, enforce_response_size,
     classify_http_error,
-    enforce_response_size,
-    is_redirect,
-    validate_redirect,
-    validate_url,
 )
 
 
@@ -30,7 +25,7 @@ class Transport(Protocol):
 
     async def request(self, url: str, *, connect_timeout: float,
                       read_timeout: float,
-                      checkpoint: str | None) -> dict: ...
+                      checkpoint: Optional[str]) -> Dict: ...
 
 
 @dataclass
@@ -46,11 +41,11 @@ class Fetcher:
     is still fully covered by its own test module.
     """
     limits: FetchLimits = field(default_factory=FetchLimits)
-    transport: Transport | None = None
+    transport: Optional[Transport] = None
     validate_targets: bool = True
 
     async def fetch(self, url: str,
-                    checkpoint: str | None = None) -> FetchResult:
+                    checkpoint: Optional[str] = None) -> FetchResult:
         # Validate before any connection is attempted.
         if self.validate_targets:
             validate_url(url, self.limits)
@@ -61,7 +56,7 @@ class Fetcher:
                 "no transport configured; pass one to Fetcher")
 
         current = url
-        redirect_chain: list[str] = []
+        redirect_chain: List[str] = []
         hops = 0
 
         while True:
@@ -74,10 +69,10 @@ class Fetcher:
                 )
             except (SecurityViolation, FetchError):
                 raise
-            except TimeoutError:
-                raise FetchError("timeout", current, "request timed out") from None
+            except asyncio.TimeoutError:
+                raise FetchError("timeout", current, "request timed out")
             except Exception as exc:
-                raise FetchError("connection", current, str(exc)) from exc
+                raise FetchError("connection", current, str(exc))
 
             status = response.get("status_code", 0)
             enforce_response_size(response.get("declared_length"), self.limits)
@@ -116,14 +111,14 @@ class Fetcher:
 class StubTransport:
     """Test double returning scripted responses, recording every request."""
 
-    def __init__(self, responses: dict[str, dict] | None = None):
+    def __init__(self, responses: Optional[Dict[str, Dict]] = None):
         self.responses = responses or {}
-        self.requested: list[str] = []
+        self.requested: List[str] = []
 
     def add(self, url: str, status_code: int = 200, body: str = "",
-            headers: dict[str, str] | None = None,
-            location: str | None = None,
-            declared_length: int | None = None) -> "StubTransport":
+            headers: Optional[Dict[str, str]] = None,
+            location: Optional[str] = None,
+            declared_length: Optional[int] = None) -> "StubTransport":
         self.responses[url] = {
             "status_code": status_code,
             "body": body,
@@ -135,7 +130,7 @@ class StubTransport:
 
     async def request(self, url: str, *, connect_timeout: float,
                       read_timeout: float,
-                      checkpoint: str | None) -> dict:
+                      checkpoint: Optional[str]) -> Dict:
         self.requested.append(url)
         if url not in self.responses:
             raise FetchError("not_found", url, "no scripted response")

@@ -16,11 +16,12 @@ distinction" — the readiness response must name degraded capabilities.
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from .metrics import HealthState, MetricsRegistry, Subsystem
+
 
 # Fields that must never appear in a log payload (§21.3).
 SENSITIVE_FIELDS = (
@@ -35,12 +36,12 @@ class LogRecord:
     """§21.3. Correlated across workflows."""
     level: str
     event: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    segment_id: str | None = None
-    session_id: str | None = None
-    correlation_id: str | None = None
-    stage: str | None = None
-    fields: dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    segment_id: Optional[str] = None
+    session_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+    stage: Optional[str] = None
+    fields: Dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> str:
         payload = {
@@ -69,7 +70,7 @@ class RedactingFormatter:
         self.sensitive_fields = set(f.lower() for f in sensitive_fields)
 
     def redact(self, record: LogRecord) -> LogRecord:
-        cleaned: dict[str, Any] = {}
+        cleaned: Dict[str, Any] = {}
         for key, value in record.fields.items():
             if key.lower() in self.sensitive_fields:
                 cleaned[key] = self.REDACTED
@@ -93,9 +94,9 @@ class RedactingFormatter:
 class StructuredLogger:
     """§21.3. Emits correlated, redacted log records."""
 
-    def __init__(self, formatter: RedactingFormatter | None = None):
+    def __init__(self, formatter: Optional[RedactingFormatter] = None):
         self.formatter = formatter or RedactingFormatter()
-        self.records: list[LogRecord] = []
+        self.records: List[LogRecord] = []
 
     def log(self, level: str, event: str, **fields) -> LogRecord:
         record = LogRecord(level=level, event=event, **{
@@ -139,11 +140,11 @@ class Capability(Enum):
 class ReadinessReport:
     """§21.4. Names degraded capabilities rather than a single global flag."""
     ready: bool
-    available: list[str] = field(default_factory=list)
-    degraded: list[str] = field(default_factory=list)
-    checked_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    available: List[str] = field(default_factory=list)
+    degraded: List[str] = field(default_factory=list)
+    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "ready": self.ready,
             "available": self.available,
@@ -155,11 +156,11 @@ class ReadinessReport:
 class HealthService:
     """§21.4. Liveness is the process; readiness is per-capability."""
 
-    def __init__(self, metrics: MetricsRegistry | None = None):
+    def __init__(self, metrics: Optional[MetricsRegistry] = None):
         self.metrics = metrics or MetricsRegistry()
         self._process_alive = True
 
-    def liveness(self) -> dict[str, Any]:
+    def liveness(self) -> Dict[str, Any]:
         """Whether the process functions sufficiently to keep running."""
         return {
             "alive": self._process_alive,
@@ -195,8 +196,8 @@ class HealthService:
 
     def full_readiness(self) -> ReadinessReport:
         """All capabilities at once, each individually reported."""
-        available: list[str] = []
-        degraded: list[str] = []
+        available: List[str] = []
+        degraded: List[str] = []
         for capability in Capability:
             report = self.readiness(capability)
             available.extend(report.available)

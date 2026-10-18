@@ -9,30 +9,16 @@ Gate 1 invariants covered here: I1, I2, I3, I4, I5, I8, I9, I11.
 """
 
 import asyncio
-from datetime import UTC, datetime
-
 import pytest
+from datetime import datetime, timezone
 
 from core.models import (
-    Article,
-    Claim,
-    ClaimStatus,
-    ClaimType,
-    Correction,
-    CorrectionType,
-    Entity,
-    EntityStatus,
-    EntityType,
-    Event,
-    EventStatus,
-    Evidence,
-    EvidenceRelationship,
-    OwnershipGroup,
-    Source,
-    SourceType,
-    Story,
+    Story, Event, Claim, Evidence, Entity, Source,
+    OwnershipGroup, Article, Correction, WorldSnapshot,
+    SourceType, EntityType, EntityStatus, EventStatus, StoryStatus,
+    ClaimType, ClaimStatus, CorrectionType, EvidenceRelationship,
 )
-from core.persistence import PersistenceError, WorldStore, content_hash
+from core.persistence import WorldStore, PersistenceError, content_hash
 
 
 def run(coro):
@@ -290,7 +276,7 @@ class TestInvariantI4HistoryIsNeverRewritten:
     def test_snapshot_is_immutable(self, store):
         s1 = run(store.create_snapshot())
         conn = store.db.connect()
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(Exception):
             conn.execute(
                 "UPDATE world_snapshots SET story_count = 99 WHERE id = ?",
                 (s1.id,))
@@ -316,15 +302,15 @@ class TestInvariantI4HistoryIsNeverRewritten:
 class TestInvariantI5ThreeTimeAxes:
     def test_published_first_seen_and_fetched_are_distinct(self, store):
         """A report published Monday, discovered Wednesday, processed Thursday."""
-        monday = datetime(2026, 1, 5, 8, 0, tzinfo=UTC)
+        monday = datetime(2026, 1, 5, 8, 0, tzinfo=timezone.utc)
         source = make_source("S", "s.com")
         source_id = run(store.add_source(source))
         article = Article(
             source_id=source_id, canonical_url="u",
             title="Monday report", content_hash="h" * 64,
             published_at=monday,
-            first_seen_at=datetime(2026, 1, 7, 9, 0, tzinfo=UTC),
-            fetched_at=datetime(2026, 1, 8, 10, 0, tzinfo=UTC),
+            first_seen_at=datetime(2026, 1, 7, 9, 0, tzinfo=timezone.utc),
+            fetched_at=datetime(2026, 1, 8, 10, 0, tzinfo=timezone.utc),
         )
         article_id = run(store.add_article(article))
         stored = run(store.get_article(article_id))
@@ -362,11 +348,11 @@ class TestInvariantI5ThreeTimeAxes:
         source_id = run(store.add_source(source))
         article = Article(
             source_id=source_id, canonical_url="u", content_hash="h" * 64,
-            published_at=datetime(2026, 1, 1, tzinfo=UTC))
+            published_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
         article_id = run(store.add_article(article))
         evidence = Evidence(
             article_id=article_id, source_id=source_id, excerpt="p",
-            source_published_at=datetime(2026, 1, 1, tzinfo=UTC))
+            source_published_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
         evidence_id = run(store.add_evidence(evidence))
         stored = run(store.get_evidence(evidence_id))
         assert stored.source_published_at is not None

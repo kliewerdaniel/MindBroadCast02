@@ -12,10 +12,12 @@ without a live model — the same discipline as Phase 2's `StubTransport`. A gat
 that requires a real model is a gate that never runs in CI.
 """
 
+import asyncio
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+
 
 # ── §14.1 Capability declarations ────────────────────────────────────
 
@@ -40,13 +42,13 @@ class ProviderCapabilities:
     structured_output: bool = False
     tool_use: bool = False
     max_context_tokens: int = 4096
-    supported_output_schemas: list[str] = field(default_factory=list)
+    supported_output_schemas: List[str] = field(default_factory=list)
     notes: str = ""
 
     def supports(self, capability: str) -> bool:
         return bool(getattr(self, capability, False))
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "streaming": self.streaming,
             "structured_output": self.structured_output,
@@ -60,11 +62,11 @@ class ProviderCapabilities:
 class GenerationResult:
     """What a provider returns for one attempt."""
     text: str = ""
-    structured: dict[str, Any] | None = None
+    structured: Optional[Dict[str, Any]] = None
     model_id: str = ""
     provider_id: str = ""
     latency_ms: int = 0
-    token_usage: dict[str, int] | None = None
+    token_usage: Optional[Dict[str, int]] = None
     finish_reason: str = "stop"
 
 
@@ -94,10 +96,10 @@ class LanguageModelProvider(Protocol):
 
     async def health_check(self) -> bool: ...
 
-    async def generate(self, request: dict[str, Any]) -> GenerationResult: ...
+    async def generate(self, request: Dict[str, Any]) -> GenerationResult: ...
 
     async def generate_structured(
-        self, request: dict[str, Any], schema: dict[str, Any]
+        self, request: Dict[str, Any], schema: Dict[str, Any]
     ) -> GenerationResult: ...
 
 
@@ -116,7 +118,7 @@ class SynthesisRequest:
     output_format: str = "pcm_s16le"
     synthesis_attempt: str = ""
     config_version: str = ""
-    deadline: datetime | None = None
+    deadline: Optional[datetime] = None
 
 
 @dataclass
@@ -128,7 +130,7 @@ class SynthesisResult:
     """
     audio: bytes = b""
     synthesis_attempt: str = ""
-    duration_ms: int | None = None
+    duration_ms: Optional[int] = None
     sample_rate: int = 24000
     channels: int = 1
     sample_format: str = "pcm_s16le"
@@ -173,7 +175,7 @@ class StubLanguageModelProvider:
             supported_output_schemas=["broadcast_script_v1"],
         )
         self.attempt_count = 0
-        self.requests: list[dict[str, Any]] = []
+        self.requests: List[Dict[str, Any]] = []
         self._fail_times = 0
 
     def capabilities(self) -> ProviderCapabilities:
@@ -186,7 +188,7 @@ class StubLanguageModelProvider:
         """Test hook: simulate transient provider failure."""
         self._fail_times = times
 
-    async def generate(self, request: dict[str, Any]) -> GenerationResult:
+    async def generate(self, request: Dict[str, Any]) -> GenerationResult:
         self.attempt_count += 1
         self.requests.append(request)
 
@@ -207,7 +209,7 @@ class StubLanguageModelProvider:
         )
 
     async def generate_structured(
-        self, request: dict[str, Any], schema: dict[str, Any]
+        self, request: Dict[str, Any], schema: Dict[str, Any]
     ) -> GenerationResult:
         if not self._capabilities.structured_output:
             raise UnsupportedCapability(
@@ -287,7 +289,7 @@ class StubTTSProvider:
 # model families per row: on constrained hardware one model handles several
 # tasks sequentially. The architecture preserves the ability to route
 # differently later.
-TASK_CAPABILITY_MAP: dict[str, str] = {
+TASK_CAPABILITY_MAP: Dict[str, str] = {
     "article_classification": "fast_inference",
     "entity_extraction": "structured_output",
     "claim_extraction": "instruction_following",
@@ -311,9 +313,9 @@ class RouteDecision:
 
 def route_task(
     task_type: str,
-    providers: dict[str, LanguageModelProvider],
+    providers: Dict[str, LanguageModelProvider],
     max_context_tokens: int = 0,
-) -> RouteDecision | None:
+) -> Optional[RouteDecision]:
     """§14.2. Select a provider that actually claims the required capability.
 
     Returns None when no available provider can serve the task — which is the

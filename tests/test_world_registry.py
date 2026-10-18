@@ -88,7 +88,7 @@ def test_rotation_interleaves_regions():
 
     def longest_run(seq):
         best = current = 1
-        for a, b in zip(seq, seq[1:], strict=False):
+        for a, b in zip(seq, seq[1:]):
             current = current + 1 if a == b else 1
             best = max(best, current)
         return best
@@ -132,7 +132,7 @@ def test_rotation_is_deterministic():
 async def test_pick_source_rotates_across_regions(tmp_path):
     """The broadcaster's own selection must use the interleaved order."""
     from core.inference.autonomous import AutonomousBroadcaster
-    from core.inference.world_sources import region_of
+    from core.inference.world_sources import all_feeds, region_of
 
     class _Runtime:
         errors: list = []

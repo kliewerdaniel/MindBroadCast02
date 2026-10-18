@@ -15,14 +15,14 @@ audited under Gate 5.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..models import Story, StoryStatus
 from ..persistence import WorldStore
-from .changes import ChangeDetector, KnownState
+from .changes import ChangeDetector, ChangeKind, KnownState, IncomingState
 from .coverage import CoverageFacts, CoverageModel
-from .ranking import StoryFacts, StoryRanker
+from .ranking import StoryFacts, StoryRanker, RankingResult
 
 
 @dataclass
@@ -32,16 +32,16 @@ class ClaimRecord:
     proposition: str
     claim_type: str
     epistemic_status: str
-    quantities: list[dict[str, Any]] = field(default_factory=list)
-    temporals: list[dict[str, Any]] = field(default_factory=list)
-    entities: list[str] = field(default_factory=list)
-    first_observed_at: datetime | None = None
-    corrected_by: str | None = None
+    quantities: List[Dict[str, Any]] = field(default_factory=list)
+    temporals: List[Dict[str, Any]] = field(default_factory=list)
+    entities: List[str] = field(default_factory=list)
+    first_observed_at: Optional[datetime] = None
+    corrected_by: Optional[str] = None
     # The article this claim was extracted from. Facts drawn from one article
     # describe the same development, so shared source is a clustering signal
     # (§8): without it, a multi-fact article fragments into N one-claim stories
     # and the broadcast stays a single sentence.
-    source_article_id: str | None = None
+    source_article_id: Optional[str] = None
 
 
 @dataclass
@@ -49,12 +49,12 @@ class StoryCandidate:
     """A story assembled from related records."""
     story_id: str
     canonical_title: str
-    claim_ids: list[str] = field(default_factory=list)
-    event_ids: list[str] = field(default_factory=list)
-    entity_names: set[str] = field(default_factory=set)
-    identity_keys: set[str] = field(default_factory=set)
-    unresolved_questions: list[str] = field(default_factory=list)
-    last_material_update_at: datetime | None = None
+    claim_ids: List[str] = field(default_factory=list)
+    event_ids: List[str] = field(default_factory=list)
+    entity_names: Set[str] = field(default_factory=set)
+    identity_keys: Set[str] = field(default_factory=set)
+    unresolved_questions: List[str] = field(default_factory=list)
+    last_material_update_at: Optional[datetime] = None
 
     def overlaps(self, other: "StoryCandidate") -> bool:
         """Whether two candidates describe the same development.
@@ -64,7 +64,9 @@ class StoryCandidate:
         """
         if self.identity_keys & other.identity_keys:
             return True
-        return len(self.entity_names & other.entity_names) >= 2
+        if len(self.entity_names & other.entity_names) >= 2:
+            return True
+        return False
 
 
 class StoryEngine:
@@ -77,9 +79,9 @@ class StoryEngine:
     def __init__(
         self,
         store: WorldStore,
-        change_detector: ChangeDetector | None = None,
-        ranker: StoryRanker | None = None,
-        coverage: CoverageModel | None = None,
+        change_detector: Optional[ChangeDetector] = None,
+        ranker: Optional[StoryRanker] = None,
+        coverage: Optional[CoverageModel] = None,
     ):
         self.store = store
         self.change_detector = change_detector or ChangeDetector()
@@ -88,14 +90,14 @@ class StoryEngine:
 
     # ── clustering ───────────────────────────────────────
 
-    def cluster(self, claims: list[ClaimRecord]) -> list[StoryCandidate]:
+    def cluster(self, claims: List[ClaimRecord]) -> List[StoryCandidate]:
         """Group claims into story candidates by shared identity or entities."""
-        candidates: list[StoryCandidate] = []
+        candidates: List[StoryCandidate] = []
         # Fast path: claims from the same source article describe one
         # development, so they cluster together regardless of identity/entity
         # overlap. Without this, a full-text article's several facts fragment
         # into separate one-claim stories.
-        by_article: dict[str, StoryCandidate] = {}
+        by_article: Dict[str, StoryCandidate] = {}
         for claim in claims:
             key = _identity_key(claim)
             art = claim.source_article_id
@@ -141,7 +143,7 @@ class StoryEngine:
     # ── known state for change detection ─────────────────
 
     def known_state_for(self, story: Story,
-                        claims: list[ClaimRecord]) -> KnownState:
+                        claims: List[ClaimRecord]) -> KnownState:
         """What the system already knows about a story (§10.3's baseline)."""
         return KnownState(
             claim_ids={c.claim_id for c in claims},
@@ -165,11 +167,11 @@ class StoryEngine:
     def story_facts(
         self,
         story: Story,
-        claims: list[ClaimRecord],
-        material_changes: list[Any],
-        evidence_counts: dict[str, int] | None = None,
-        source_groups: tuple[int, int] = (0, 1),
-        now: datetime | None = None,
+        claims: List[ClaimRecord],
+        material_changes: List[Any],
+        evidence_counts: Optional[Dict[str, int]] = None,
+        source_groups: Tuple[int, int] = (0, 1),
+        now: Optional[datetime] = None,
     ) -> StoryFacts:
         """Build ranking facts from stored records only — no live model."""
         evidence_counts = evidence_counts or {}
@@ -199,7 +201,7 @@ class StoryEngine:
         )
 
     def coverage_facts(self, story: Story, has_material_change: bool,
-                       now: datetime | None = None) -> CoverageFacts:
+                       now: Optional[datetime] = None) -> CoverageFacts:
         return CoverageFacts(
             story_id=story.id,
             importance=0.0,
@@ -219,7 +221,7 @@ class StoryEngine:
             editorial_summary="",
             status=StoryStatus.ACTIVE,
             last_material_update_at=(candidate.last_material_update_at
-                                     or datetime.now(UTC)),
+                                     or datetime.now(timezone.utc)),
             claim_ids=list(candidate.claim_ids),
             unresolved_question_count=len(candidate.unresolved_questions),
         )
@@ -249,7 +251,7 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^\w\s]", "", text.lower()).strip()
 
 
-def _unit(unit: str | None) -> str:
+def _unit(unit: Optional[str]) -> str:
     if not unit:
         return ""
     text = unit.lower().strip()
