@@ -322,12 +322,10 @@ class ContradictionAnalyzer:
         """Values equal, accounting for magnitude units (million vs billion)."""
         new_scaled = new * _SCALE.get(new_unit, 1.0)
         old_scaled = old * _SCALE.get(old_unit, 1.0)
-        if new_scaled == old_scaled:
-            return True
         # Exact equality is the bar; a 0.1% difference in a reported figure
         # is not corroboration, it is rounding, and calling it either is a
         # judgement the system should not make silently.
-        return False
+        return new_scaled == old_scaled
 
     @staticmethod
     def _temporal(claim: ExtractedClaim) -> str | None:
