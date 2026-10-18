@@ -10,15 +10,16 @@ addresses, and the exchange carries the shared facts and the unresolved items
 so the audience can see what is settled and what is not.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
-from .entities import (
-    Disagreement, DialogueTurn, PersonaConfig, PersonaAnalysis,
-    ResolutionStatus, StructuredExchange,
-)
 from .analysis import SharedEvidencePacket
+from .entities import (
+    DialogueTurn,
+    Disagreement,
+    PersonaAnalysis,
+    PersonaConfig,
+    ResolutionStatus,
+    StructuredExchange,
+)
 
 
 class DialogueComposer:
@@ -30,9 +31,9 @@ class DialogueComposer:
     def compose(
         self,
         packet: SharedEvidencePacket,
-        analyses: List[PersonaAnalysis],
-        disagreements: List[Disagreement],
-        personas: Optional[List[PersonaConfig]] = None,
+        analyses: list[PersonaAnalysis],
+        disagreements: list[Disagreement],
+        personas: list[PersonaConfig] | None = None,
     ) -> StructuredExchange:
         """Address each substantive disagreement in turn.
 
@@ -45,7 +46,7 @@ class DialogueComposer:
         )
 
         substantive = [d for d in disagreements if d.is_substantive]
-        by_persona: Dict[str, PersonaAnalysis] = {
+        {
             a.persona_id: a for a in analyses}
 
         # A persona's position airs once, even if it appears in several
@@ -107,7 +108,7 @@ class DialogueComposer:
         self,
         disagreement: Disagreement,
         status: ResolutionStatus,
-        evidence: Optional[List[str]] = None,
+        evidence: list[str] | None = None,
     ) -> Disagreement:
         """Close a disagreement only with a stated basis.
 

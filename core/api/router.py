@@ -14,11 +14,17 @@ handler's memory.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from .contracts import (
-    ApiError, ApiResponse, ErrorCode, not_found, unauthorized, validation_error,
+    ApiError,
+    ApiResponse,
+    ErrorCode,
+    not_found,
+    unauthorized,
+    validation_error,
 )
 
 
@@ -26,7 +32,7 @@ from .contracts import (
 class ApiRequest:
     method: str
     path: str
-    query: Dict[str, str] = field(default_factory=dict)
+    query: dict[str, str] = field(default_factory=dict)
     body: Any = None
     authenticated: bool = False
     request_id: str = ""
@@ -40,7 +46,7 @@ class ApiRequest:
 
 
 # A handler: (ApiRequest, path params) -> ApiResponse
-Handler = Callable[[ApiRequest, Dict[str, str]], ApiResponse]
+Handler = Callable[[ApiRequest, dict[str, str]], ApiResponse]
 
 
 def _compile(pattern: str):
@@ -67,7 +73,7 @@ class Route:
         self.summary = summary
         self._regex = _compile(pattern)
 
-    def matches(self, method: str, path: str) -> Optional[Dict[str, str]]:
+    def matches(self, method: str, path: str) -> dict[str, str] | None:
         if method.upper() != self.method:
             return None
         match = self._regex.match(path)
@@ -78,7 +84,7 @@ class Router:
     """Dispatches requests to handlers. No framework dependency."""
 
     def __init__(self):
-        self.routes: List[Route] = []
+        self.routes: list[Route] = []
 
     def add(self, method: str, pattern: str, handler: Handler,
             requires_auth: bool = False, summary: str = "") -> Route:
@@ -104,9 +110,8 @@ class Router:
             return handler
         return decorator
 
-    def resolve(self, method: str, path: str) -> Optional[Tuple[Route, Dict[str, str]]]:
+    def resolve(self, method: str, path: str) -> tuple[Route, dict[str, str]] | None:
         """Find the route, or None. Path-level 404, not method-level."""
-        path_matched_any_method = False
         for route in self.routes:
             params = route.matches(method, path)
             if params is not None:
@@ -140,7 +145,7 @@ class Router:
             return ApiResponse.error(validation_error(
                 str(error), request_id=request.request_id))
 
-    def endpoints(self) -> List[Dict[str, Any]]:
+    def endpoints(self) -> list[dict[str, Any]]:
         """The §19.2 endpoint table, for introspection and tests."""
         return [
             {

@@ -20,14 +20,16 @@ different result?" is answerable from stored records rather than from memory.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from ..models import Article, Event, EventStatus
 from ..persistence import WorldStore
 from .claims import ClaimExtractionResult, ClaimExtractor
 from .contradiction import (
-    ContradictionAnalyzer, ContradictionReport, ExistingClaimView,
+    ContradictionAnalyzer,
+    ContradictionReport,
+    ExistingClaimView,
 )
 from .entities import EntityExtractionResult, EntityExtractor
 from .evidence import EvidenceExtractionResult, EvidenceExtractor
@@ -38,24 +40,24 @@ from .structural import NormalizedDocument, StructuralNormalizer, verify_spans
 @dataclass
 class CompilationResult:
     article_id: str
-    document: Optional[NormalizedDocument] = None
-    claims: Optional[ClaimExtractionResult] = None
-    entities: Optional[EntityExtractionResult] = None
-    evidence: Optional[EvidenceExtractionResult] = None
-    contradictions: Optional[ContradictionReport] = None
-    integration: Optional[IntegrationResult] = None
+    document: NormalizedDocument | None = None
+    claims: ClaimExtractionResult | None = None
+    entities: EntityExtractionResult | None = None
+    evidence: EvidenceExtractionResult | None = None
+    contradictions: ContradictionReport | None = None
+    integration: IntegrationResult | None = None
     status: str = "pending"             # pending | compiled | failed
-    error: Optional[str] = None
-    span_problems: List[str] = field(default_factory=list)
-    pass_versions: Dict[str, str] = field(default_factory=dict)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    error: str | None = None
+    span_problems: list[str] = field(default_factory=list)
+    pass_versions: dict[str, str] = field(default_factory=dict)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
     @property
     def ok(self) -> bool:
         return self.status == "compiled"
 
-    def counts(self) -> Dict[str, int]:
+    def counts(self) -> dict[str, int]:
         return {
             "sentences": len(self.document.sentences) if self.document else 0,
             "claims": len(self.claims.claims) if self.claims else 0,
@@ -79,11 +81,11 @@ class KnowledgeCompiler:
     def __init__(
         self,
         store: WorldStore,
-        structural: Optional[StructuralNormalizer] = None,
-        entity_extractor: Optional[Any] = None,
-        claim_extractor: Optional[ClaimExtractor] = None,
-        evidence_extractor: Optional[EvidenceExtractor] = None,
-        contradiction_analyzer: Optional[ContradictionAnalyzer] = None,
+        structural: StructuralNormalizer | None = None,
+        entity_extractor: Any | None = None,
+        claim_extractor: ClaimExtractor | None = None,
+        evidence_extractor: EvidenceExtractor | None = None,
+        contradiction_analyzer: ContradictionAnalyzer | None = None,
         schedule_downstream: bool = True,
     ):
         self.store = store
@@ -98,7 +100,7 @@ class KnowledgeCompiler:
 
     async def compile(self, article: Article) -> CompilationResult:
         result = CompilationResult(article_id=article.id)
-        result.started_at = datetime.now(timezone.utc)
+        result.started_at = datetime.now(UTC)
 
         # The article must already be durably captured: evidence rows carry an
         # article FK, so compiling an uncaptured article would fail deep inside
@@ -110,7 +112,7 @@ class KnowledgeCompiler:
             result.error = (
                 f"article {article.id} is not captured; ingestion must persist "
                 "it before the compiler runs (§8.2 Pass 8 depends on it)")
-            result.completed_at = datetime.now(timezone.utc)
+            result.completed_at = datetime.now(UTC)
             return result
         # Compile against the stored record so timestamps and hashes match
         # what was actually captured.
@@ -181,13 +183,13 @@ class KnowledgeCompiler:
         result.status = ("failed" if integration.status == "failed"
                          else "compiled")
         result.error = integration.incomplete_reason
-        result.completed_at = datetime.now(timezone.utc)
+        result.completed_at = datetime.now(UTC)
         return result
 
     # ── pass runner ──────────────────────────────────────
 
     def _run_pass(self, result: CompilationResult, number: int, pass_object,
-                  *args) -> Optional[Any]:
+                  *args) -> Any | None:
         """Run one pass, recording its output and version, containing failure.
 
         A failed pass aborts the compilation rather than degrading to partial
@@ -217,10 +219,10 @@ class KnowledgeCompiler:
 
     # ── Pass 5 and 6 helpers ─────────────────────────────
 
-    async def _existing_claim_views(self) -> List[ExistingClaimView]:
+    async def _existing_claim_views(self) -> list[ExistingClaimView]:
         """Stored claims, as the contradiction analyzer sees them."""
         claims = await self.store.list_claims()
-        views: List[ExistingClaimView] = []
+        views: list[ExistingClaimView] = []
         for claim in claims:
             metadata = claim.metadata_json or {}
             quantities = [
@@ -246,7 +248,7 @@ class KnowledgeCompiler:
 
     def _resolve_events(self, article: Article,
                         document: NormalizedDocument,
-                        claims: ClaimExtractionResult) -> List[Event]:
+                        claims: ClaimExtractionResult) -> list[Event]:
         """Deterministic event resolution.
 
         An article whose first sentence is a direct assertion yields one

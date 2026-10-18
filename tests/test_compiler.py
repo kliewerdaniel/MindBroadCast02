@@ -9,26 +9,34 @@ calling two different months a contradiction.
 """
 
 import asyncio
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from core.models import (
-    Source, Article, Claim, ClaimType, ClaimStatus, EntityType,
-    EvidenceRelationship, ExtractionStatus,
-)
-from core.persistence import WorldStore
-from core.compiler.structural import (
-    StructuralNormalizer, verify_spans, NormalizedDocument,
+import pytest
+
+from core.compiler.cku import CKUAssembler, canonical_identity
+from core.compiler.claims import ClaimExtractor
+from core.compiler.contradiction import (
+    AnalysisOutcome,
+    ContradictionAnalyzer,
+    ExistingClaimView,
 )
 from core.compiler.entities import EntityExtractor, RuleBasedEntityExtractor
-from core.compiler.claims import ClaimExtractor
 from core.compiler.evidence import EvidenceExtractor
-from core.compiler.contradiction import (
-    ContradictionAnalyzer, ExistingClaimView, AnalysisOutcome,
-)
-from core.compiler.integration import KnowledgeIntegrator
-from core.compiler.cku import CKUAssembler, canonical_identity
 from core.compiler.orchestrator import KnowledgeCompiler
+from core.compiler.structural import (
+    StructuralNormalizer,
+    verify_spans,
+)
+from core.models import (
+    Article,
+    Claim,
+    ClaimStatus,
+    ClaimType,
+    EvidenceRelationship,
+    ExtractionStatus,
+    Source,
+)
+from core.persistence import WorldStore
 
 
 def run(coro):
@@ -71,7 +79,7 @@ def captured(store):
             title=title,
             content_hash=f"{abs(hash(text)):064x}"[:64],
             normalized_text=text,
-            published_at=datetime(2026, 3, 20, tzinfo=timezone.utc),
+            published_at=datetime(2026, 3, 20, tzinfo=UTC),
             extraction_status=ExtractionStatus.PENDING,
         )
         await store.add_article(article)
@@ -603,7 +611,6 @@ class TestCanonicalKnowledgeUnits:
 
     def test_identity_does_not_depend_on_text(self):
         """§8.3.1: same assertion, different wording -> same identity."""
-        from core.models import Claim
         a = Claim(canonical_proposition="Output rose 5%.",
                   claim_type=ClaimType.QUANTITATIVE)
         b = Claim(canonical_proposition="Production increased by five percent.",
@@ -614,14 +621,12 @@ class TestCanonicalKnowledgeUnits:
 
     def test_identity_distinguishes_different_quantities(self):
         """Same sentence, different number -> different knowledge."""
-        from core.models import Claim
         claim = Claim(canonical_proposition="Output rose.",
                       claim_type=ClaimType.QUANTITATIVE)
         assert canonical_identity(claim, [{"value": "5", "unit": "%"}]) != \
             canonical_identity(claim, [{"value": "6", "unit": "%"}])
 
     def test_identity_distinguishes_different_temporal_scope(self):
-        from core.models import Claim
         claim = Claim(canonical_proposition="Output rose.",
                       claim_type=ClaimType.QUANTITATIVE)
         march = [{"phrase": "in March"}]
@@ -662,7 +667,7 @@ class TestCompilerScope:
         async def scenario():
             text = "The policy reduced inflation by two percent."
             article = await captured(text)
-            first = await KnowledgeCompiler(store).compile(article)
+            await KnowledgeCompiler(store).compile(article)
             doc = document_of(text)
             claims = ClaimExtractor().run(doc)
             second = ClaimExtractor().run(document_of(text))

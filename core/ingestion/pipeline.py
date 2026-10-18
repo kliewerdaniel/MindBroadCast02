@@ -25,28 +25,35 @@ Ingestion does not determine editorial meaning (§7.1). No language model is
 called anywhere in this module.
 """
 
-import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..models import (
-    Source, SourceType, Article, ExtractionStatus,
+    Article,
+    ExtractionStatus,
+    Source,
 )
 from ..persistence import WorldStore
-from .adapters import FeedAdapter, NormalizedEntry, AdapterError
+from .adapters import AdapterError, FeedAdapter, NormalizedEntry
 from .body import enrich_with_body
 from .canonicalization import (
-    canonicalize_url, CanonicalizationPolicy, CanonicalizationResult,
+    CanonicalizationPolicy,
+    CanonicalizationResult,
+    canonicalize_url,
+)
+from .canonicalization import (
     content_hash as hash_text,
 )
 from .deduplication import (
-    Deduplicator, DeduplicationPolicy, DuplicateKind, DuplicateCandidate,
+    DeduplicationPolicy,
+    Deduplicator,
+    DuplicateCandidate,
+    DuplicateKind,
     ExistingArticle,
 )
 from .fetcher import Fetcher
-from .scheduler import SourcePollState, decide_under_backpressure
 
 
 class IngestDisposition(Enum):
@@ -63,11 +70,11 @@ class IngestDisposition(Enum):
 class IngestOutcome:
     disposition: IngestDisposition
     entry_title: str = ""
-    article_id: Optional[str] = None
-    canonical_url: Optional[str] = None
-    candidate: Optional[DuplicateCandidate] = None
-    canonicalization: Optional[CanonicalizationResult] = None
-    outbox_message_id: Optional[str] = None
+    article_id: str | None = None
+    canonical_url: str | None = None
+    candidate: DuplicateCandidate | None = None
+    canonicalization: CanonicalizationResult | None = None
+    outbox_message_id: str | None = None
     detail: str = ""
 
 
@@ -75,18 +82,18 @@ class IngestOutcome:
 class IngestReport:
     source_id: str = ""
     started_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+        default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
     entries_seen: int = 0
-    outcomes: List[IngestOutcome] = field(default_factory=list)
-    error: Optional[str] = None
+    outcomes: list[IngestOutcome] = field(default_factory=list)
+    error: str | None = None
 
     @property
     def ok(self) -> bool:
         return self.error is None
 
-    def counts(self) -> Dict[str, int]:
-        result: Dict[str, int] = {}
+    def counts(self) -> dict[str, int]:
+        result: dict[str, int] = {}
         for outcome in self.outcomes:
             key = outcome.disposition.value
             result[key] = result.get(key, 0) + 1
@@ -112,7 +119,7 @@ class IngestionPipeline:
         self,
         store: WorldStore,
         fetcher: Fetcher,
-        policy: Optional[IngestionPolicy] = None,
+        policy: IngestionPolicy | None = None,
     ):
         self.store = store
         self.fetcher = fetcher
@@ -132,11 +139,11 @@ class IngestionPipeline:
             entries = adapter.parse_response(result)
         except AdapterError as exc:
             report.error = f"{exc.category}: {exc.detail}"
-            report.completed_at = datetime.now(timezone.utc)
+            report.completed_at = datetime.now(UTC)
             return report
         except Exception as exc:
             report.error = f"unexpected: {exc}"
-            report.completed_at = datetime.now(timezone.utc)
+            report.completed_at = datetime.now(UTC)
             return report
 
         report.entries_seen = len(entries)
@@ -154,7 +161,7 @@ class IngestionPipeline:
                                        IngestDisposition.FLAGGED):
                 existing = await self._existing_articles()
 
-        report.completed_at = datetime.now(timezone.utc)
+        report.completed_at = datetime.now(UTC)
         return report
 
     # ── one entry ────────────────────────────────────────
@@ -163,7 +170,7 @@ class IngestionPipeline:
         self,
         source: Source,
         entry: NormalizedEntry,
-        existing: List[ExistingArticle],
+        existing: list[ExistingArticle],
     ) -> IngestOutcome:
         if not entry.link:
             return IngestOutcome(
@@ -242,7 +249,8 @@ class IngestionPipeline:
         try:
             body_text = await enrich_with_body(self.fetcher, entry.link)
         except Exception as exc:
-            import logging; logging.getLogger(__name__).warning(
+            import logging
+            logging.getLogger(__name__).warning(
                 "body enrichment failed for %s: %s", entry.link, exc)
             body_text = None
         normalized = body_text or entry.content or entry.summary
@@ -431,7 +439,7 @@ class IngestionPipeline:
 
     # ── helpers ──────────────────────────────────────────
 
-    async def _existing_articles(self) -> List[ExistingArticle]:
+    async def _existing_articles(self) -> list[ExistingArticle]:
         articles = await self.store.list_articles()
         return [
             ExistingArticle(
@@ -444,19 +452,19 @@ class IngestionPipeline:
             for a in articles
         ]
 
-    async def pending_work(self) -> List[Dict[str, Any]]:
+    async def pending_work(self) -> list[dict[str, Any]]:
         """Outbox rows awaiting the knowledge compiler (recovery source)."""
         return await self.store.pending_outbox()
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat()
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
 
 
-def _json(value: Dict[str, Any]) -> str:
+def _json(value: dict[str, Any]) -> str:
     import json
     return json.dumps(value, default=str)

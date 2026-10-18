@@ -20,16 +20,16 @@ Design boundaries preserved:
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import secrets
 import struct
 import sys
 import threading
-from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
@@ -37,10 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from ..broadcast.providers import ProviderError
 from ..inference.autonomous import AutonomousBroadcaster
-from ..inference.providers import OllamaProvider
-from ..inference.qwen3_tts_http import Qwen3TTSHttpProvider
 from ..inference.runtime import LiveRuntime, RuntimeConfig, TranscriptLine
 
 _HERE = Path(__file__).resolve().parent
@@ -91,14 +88,14 @@ _SEGMENTS_DIR = _data_dir() / "data" / "segments"
 
 # The asyncio event-loop gotcha: capture the REAL running loop on first SSE
 # connection; broadcast into the subscriber queues with call_soon_threadsafe.
-_main_loop: Optional[asyncio.AbstractEventLoop] = None
-_subscribers: List["asyncio.Queue"] = []
+_main_loop: asyncio.AbstractEventLoop | None = None
+_subscribers: list["asyncio.Queue"] = []
 _run_lock = threading.Lock()
 _run_active = False
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _best_available_tts_backend() -> str:
@@ -170,16 +167,14 @@ def _run_health(provider) -> bool:
         return False
 
 
-def _broadcast(event: Dict[str, Any]) -> None:
+def _broadcast(event: dict[str, Any]) -> None:
     """Thread-safe push to every SSE subscriber."""
     if _main_loop is None:
         return
 
     def _put(queue: "asyncio.Queue") -> None:
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             queue.put_nowait(event)
-        except asyncio.QueueFull:
-            pass
 
     for queue in list(_subscribers):
         _main_loop.call_soon_threadsafe(_put, queue)
@@ -220,7 +215,7 @@ class ConsoleState:
         self.autonomous = AutonomousBroadcaster(
             self.runtime, db_path=str(_SEGMENTS_DIR.parent / "world.db"),
             on_segment=self.on_segment)
-        self.segments: List[Dict[str, Any]] = []   # ordered, playable
+        self.segments: list[dict[str, Any]] = []   # ordered, playable
         _SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
     def _tts_is_cloned(self) -> bool:
@@ -318,13 +313,13 @@ class ConsoleState:
         self.segments.append(entry)
         _broadcast({"type": "segment", **entry})
 
-    async def health(self) -> Dict[str, Any]:
+    async def health(self) -> dict[str, Any]:
         return {
             "llm": await self.llm.health_check(),
             "tts": await self.tts.health_check(),
         }
 
-    def voice_report(self) -> Dict[str, Any]:
+    def voice_report(self) -> dict[str, Any]:
         """Which voice is actually speaking, and whether it is the cloned one.
 
         The station's voice is Chris's, cloned from chris.wav. When the clip is
@@ -361,13 +356,13 @@ class FeedCreate(BaseModel):
     endpoint: str
 
 class FeedEdit(BaseModel):
-    name: Optional[str] = None
-    endpoint: Optional[str] = None
-    enabled: Optional[bool] = None
-    poll_interval_seconds: Optional[int] = Field(None, ge=30)
+    name: str | None = None
+    endpoint: str | None = None
+    enabled: bool | None = None
+    poll_interval_seconds: int | None = Field(None, ge=30)
 
 class BroadcastRequest(BaseModel):
-    topics: List[Dict[str, Any]] = Field(default_factory=list)
+    topics: list[dict[str, Any]] = Field(default_factory=list)
 
 class AutoBroadcastRequest(BaseModel):
     source: str = "Live Feed"
@@ -379,13 +374,13 @@ class StationStartRequest(BaseModel):
     endpoint: str = "https://feeds.npr.org/1001/rss.xml"
     poll_seconds: float = 30.0
     world: bool = False
-    sources: List[Dict[str, str]] = Field(default_factory=list)
+    sources: list[dict[str, str]] = Field(default_factory=list)
 
 class SettingsUpdate(BaseModel):
-    poll_seconds: Optional[float] = None
-    use_world_feeds: Optional[bool] = None
-    multi_persona: Optional[bool] = None
-    max_compile_per_cycle: Optional[int] = None
+    poll_seconds: float | None = None
+    use_world_feeds: bool | None = None
+    multi_persona: bool | None = None
+    max_compile_per_cycle: int | None = None
 
 
 app = FastAPI(title="MindBroadcast Console")
@@ -400,7 +395,7 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     status = await state.health()
     # Report entity extraction availability so a missing spaCy model is
     # visible rather than silently degrading the compiler.
@@ -418,7 +413,7 @@ async def health() -> Dict[str, Any]:
 
 
 @app.get("/api/segments")
-async def segments() -> Dict[str, Any]:
+async def segments() -> dict[str, Any]:
     return {"segments": state.segments}
 
 
@@ -436,7 +431,7 @@ async def stream(_: None = Depends(_verify_console_token)) -> StreamingResponse:
     global _main_loop
     if _main_loop is None:
         _main_loop = asyncio.get_running_loop()
-    queue: "asyncio.Queue" = asyncio.Queue(maxsize=256)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=256)
     _subscribers.append(queue)
 
     async def event_source():
@@ -456,7 +451,7 @@ async def stream(_: None = Depends(_verify_console_token)) -> StreamingResponse:
 
 @app.post("/api/broadcast")
 async def broadcast(body: BroadcastRequest,
-                     _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                     _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Start a broadcast run over the given topics (one at a time)."""
     global _run_active
     if not _run_lock.acquire(blocking=False):
@@ -490,7 +485,7 @@ async def broadcast(body: BroadcastRequest,
 
 @app.post("/api/broadcast/auto")
 async def broadcast_auto(body: AutoBroadcastRequest,
-                           _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                           _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Run an autonomous cycle: watch a live source, decide, and speak.
 
     This is the real system — the broadcaster ingests a news feed, compiles it
@@ -550,7 +545,7 @@ async def broadcast_auto(body: AutoBroadcastRequest,
 # A long-lived background thread running run_forever with a real poll
 # interval, so the browser can start a self-running station and stop it.
 
-_station: Dict[str, Any] = {"running": False, "thread": None,
+_station: dict[str, Any] = {"running": False, "thread": None,
                             "source": None, "endpoint": None,
                             "poll_seconds": 30.0, "started_at": None,
                             "last_progress": None}
@@ -558,7 +553,7 @@ _station: Dict[str, Any] = {"running": False, "thread": None,
 
 @app.post("/api/station/start")
 async def station_start(body: StationStartRequest,
-                        _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                        _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Start the continuous station: watch a source and air on a loop."""
     if _station["running"]:
         raise HTTPException(409, "the station is already running")
@@ -602,10 +597,8 @@ async def station_start(body: StationStartRequest,
             # finish loading: the console probes once at startup, and if the
             # model was not ready it was pinned to a fallback voice for the
             # whole session — the cloned voice silently disappeared.
-            try:
+            with contextlib.suppress(Exception):
                 loop.run_until_complete(state.refresh_tts_backend())
-            except Exception:                    # noqa: BLE001
-                pass
             if use_world:
                 loop.run_until_complete(
                     state.autonomous.register_world_sources())
@@ -635,7 +628,7 @@ async def station_start(body: StationStartRequest,
                      "source": "World" if use_world else name,
                      "endpoint": endpoint,
                      "poll_seconds": poll,
-                     "started_at": datetime.now(timezone.utc).isoformat()})
+                     "started_at": datetime.now(UTC).isoformat()})
     thread = threading.Thread(target=station_loop, daemon=True)
     _station["thread"] = thread
     thread.start()
@@ -649,7 +642,7 @@ async def station_start(body: StationStartRequest,
 
 
 @app.post("/api/station/stop")
-async def station_stop(_: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+async def station_stop(_: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Stop the continuous station after the current cycle."""
     if not _station["running"]:
         return {"stopped": True, "was_running": False}
@@ -658,7 +651,7 @@ async def station_stop(_: None = Depends(_verify_console_token)) -> Dict[str, An
 
 
 @app.get("/api/station")
-async def station_status() -> Dict[str, Any]:
+async def station_status() -> dict[str, Any]:
     """Current station state, including what the cycle is doing right now.
 
     The UI polls this so a fresh page load (or a missed SSE event) still shows
@@ -685,10 +678,7 @@ def _on_station_progress(event: Any) -> None:
     A cycle takes minutes. These events are what let the UI show movement
     instead of a single "running" line that never changes.
     """
-    if isinstance(event, dict):
-        payload = dict(event)
-    else:
-        payload = {"phase": "working", "detail": str(event)}
+    payload = dict(event) if isinstance(event, dict) else {"phase": "working", "detail": str(event)}
     # Remember it so /api/station can report the phase to a late joiner.
     _station["last_progress"] = payload
     payload["type"] = "progress"
@@ -713,7 +703,7 @@ def _on_station_cycle(cycle: Any) -> None:
 # endpoints let the user see and change them without touching the database.
 
 @app.get("/api/world")
-async def world_info() -> Dict[str, Any]:
+async def world_info() -> dict[str, Any]:
     """The curated world registry's shape, so the UI never hardcodes it.
 
     The region list and feed count live in world_sources.py. Duplicating them
@@ -732,7 +722,7 @@ async def world_info() -> Dict[str, Any]:
 
 
 @app.get("/api/feeds")
-async def list_feeds() -> Dict[str, Any]:
+async def list_feeds() -> dict[str, Any]:
     """Every registered feed, with the operational state that matters.
 
     Includes the curated world registry, marked as such, so the user can see
@@ -765,7 +755,7 @@ async def list_feeds() -> Dict[str, Any]:
 
 @app.post("/api/feeds")
 async def add_feed(body: FeedCreate,
-                   _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                   _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Register a new feed, or return the existing one for that endpoint."""
     name = body.name.strip()
     endpoint = body.endpoint.strip()
@@ -774,11 +764,11 @@ async def add_feed(body: FeedCreate,
     if not endpoint.lower().startswith(("http://", "https://")):
         raise HTTPException(400, "endpoint must be an http(s) URL")
     # Validate against the SSRF policy before registering.
-    from ..ingestion.security import validate_url, SecurityViolation
+    from ..ingestion.security import SecurityViolation, validate_url
     try:
         validate_url(endpoint)
     except SecurityViolation as e:
-        raise HTTPException(400, f"endpoint rejected by fetch policy: {e}")
+        raise HTTPException(400, f"endpoint rejected by fetch policy: {e}") from e
 
     existing = await state.autonomous.store.find_source_by_endpoint(endpoint)
     if existing is not None:
@@ -790,7 +780,7 @@ async def add_feed(body: FeedCreate,
 
 @app.patch("/api/feeds/{source_id}")
 async def edit_feed(source_id: str, body: FeedEdit,
-                    _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                    _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Edit a feed's name, endpoint, or enabled flag."""
     store = state.autonomous.store
     source = await store.get_source(source_id)
@@ -804,11 +794,11 @@ async def edit_feed(source_id: str, body: FeedEdit,
         if not endpoint.lower().startswith(("http://", "https://")):
             raise HTTPException(400, "endpoint must be an http(s) URL")
         # Validate against the SSRF policy before accepting the edit.
-        from ..ingestion.security import validate_url, SecurityViolation
+        from ..ingestion.security import SecurityViolation, validate_url
         try:
             validate_url(endpoint)
         except SecurityViolation as e:
-            raise HTTPException(400, f"endpoint rejected by fetch policy: {e}")
+            raise HTTPException(400, f"endpoint rejected by fetch policy: {e}") from e
         source.endpoint = endpoint
     if body.enabled is not None:
         source.enabled = body.enabled
@@ -822,13 +812,13 @@ async def edit_feed(source_id: str, body: FeedEdit,
 
 @app.delete("/api/feeds/{source_id}")
 async def remove_feed(source_id: str,
-                      _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                      _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Delete a feed. Refuses while articles still reference it."""
     from ..persistence import PersistenceError
     try:
         removed = await state.autonomous.store.delete_source(source_id)
     except PersistenceError as error:
-        raise HTTPException(409, str(error))
+        raise HTTPException(409, str(error)) from error
     if not removed:
         raise HTTPException(404, "no such feed")
     return {"removed": True, "id": source_id}
@@ -837,7 +827,7 @@ async def remove_feed(source_id: str,
 # ── settings: the station's knobs, editable in the app ───────────────
 
 @app.get("/api/settings")
-async def get_settings() -> Dict[str, Any]:
+async def get_settings() -> dict[str, Any]:
     from .settings import MIN_POLL_SECONDS, settings_store
     return {"settings": settings_store.load().to_dict(),
             "min_poll_seconds": MIN_POLL_SECONDS}
@@ -845,7 +835,7 @@ async def get_settings() -> Dict[str, Any]:
 
 @app.put("/api/settings")
 async def put_settings(body: SettingsUpdate,
-                       _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
+                       _: None = Depends(_verify_console_token)) -> dict[str, Any]:
     """Update settings. Invalid values are clamped, never rejected outright.
 
     A user setting a 5-second poll gets the safe floor and the response says
@@ -867,10 +857,8 @@ async def put_settings(body: SettingsUpdate,
     # Apply the live ones: a poll change should take effect on the next wait
     # rather than requiring a restart.
     if _station.get("running"):
-        try:
+        with contextlib.suppress(Exception):
             _station["poll_seconds"] = updated.poll_seconds
-        except Exception:                        # noqa: BLE001
-            pass
     return {"settings": updated.to_dict()}
 
 
@@ -902,9 +890,9 @@ if _STATIC.exists():
 def _print_console_token() -> None:
     import sys
     print(f"\n{'='*60}", file=sys.stderr)
-    print(f"  MindBroadcast console", file=sys.stderr)
+    print("  MindBroadcast console", file=sys.stderr)
     print(f"  Token: {_CONSOLE_TOKEN}", file=sys.stderr)
-    print(f"  Bind:  127.0.0.1:7862 (localhost-only)", file=sys.stderr)
+    print("  Bind:  127.0.0.1:7862 (localhost-only)", file=sys.stderr)
     print(f"{'='*60}\n", file=sys.stderr)
 
 

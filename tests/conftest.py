@@ -10,18 +10,28 @@ stores cannot see each other's data.
 """
 
 import asyncio
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
 
 from core.models import (
-    Story, Event, Claim, Evidence, ClaimEvidence, Entity, Source,
-    OwnershipGroup, Article, Correction, WorldSnapshot,
-    SourceType, EntityType, EntityStatus, EventStatus, StoryStatus,
-    ClaimType, ClaimStatus, CorrectionType, EvidenceRelationship,
-    EpistemicCategory, ExtractionStatus,
-    StoryFilter, ClaimFilter, SnapshotDiff,
+    Article,
+    Claim,
+    ClaimStatus,
+    ClaimType,
+    Correction,
+    CorrectionType,
+    Entity,
+    EntityType,
+    Event,
+    EventStatus,
+    Evidence,
+    Source,
+    SourceType,
+    Story,
+    StoryStatus,
 )
-from core.persistence import WorldStore, PersistenceError, Database
+from core.persistence import WorldStore
 
 
 def run(coro):
@@ -66,7 +76,7 @@ def sample_article(sample_source):
         title="Climate Summit Begins",
         content_hash="a" * 64,
         normalized_text="World leaders gathered for the climate summit.",
-        published_at=datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc),
+        published_at=datetime(2026, 1, 1, 8, 0, tzinfo=UTC),
     )
 
 
@@ -89,7 +99,7 @@ def sample_event():
         event_type="summit",
         summary="World leaders gathered for the climate summit.",
         status=EventStatus.DEVELOPING,
-        occurred_at_start=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+        occurred_at_start=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
     )
 
 

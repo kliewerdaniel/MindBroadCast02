@@ -18,8 +18,8 @@ Two requirements shape this module:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 
 class AdapterError(Exception):
@@ -41,15 +41,15 @@ class NormalizedEntry:
     """
     title: str = ""
     link: str = ""
-    guid: Optional[str] = None
-    published_at: Optional[datetime] = None      # never invented
-    updated_at: Optional[datetime] = None
-    author: Optional[str] = None
+    guid: str | None = None
+    published_at: datetime | None = None      # never invented
+    updated_at: datetime | None = None
+    author: str | None = None
     summary: str = ""
     content: str = ""
-    language: Optional[str] = None
-    categories: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    language: str | None = None
+    categories: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -57,12 +57,12 @@ class FetchResult:
     """The outcome of one fetch attempt."""
     url: str
     status_code: int
-    headers: Dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
     body: str = ""
-    final_url: Optional[str] = None
-    redirect_chain: List[str] = field(default_factory=list)
+    final_url: str | None = None
+    redirect_chain: list[str] = field(default_factory=list)
     fetched_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc))
+        default_factory=lambda: datetime.now(UTC))
 
     @property
     def ok(self) -> bool:
@@ -74,18 +74,18 @@ class HealthStatus:
     healthy: bool
     detail: str = ""
     last_checked: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc))
+        default_factory=lambda: datetime.now(UTC))
 
 
 class SourceAdapter(ABC):
     """Common connector contract (spec §7.2)."""
 
     @abstractmethod
-    async def fetch_updates(self, cursor: Optional[str] = None) -> FetchResult:
+    async def fetch_updates(self, cursor: str | None = None) -> FetchResult:
         """Fetch raw updates since `cursor`."""
 
     @abstractmethod
-    def parse_response(self, response: FetchResult) -> List[NormalizedEntry]:
+    def parse_response(self, response: FetchResult) -> list[NormalizedEntry]:
         """Parse a fetch result into normalized entries."""
 
     @abstractmethod
@@ -93,11 +93,11 @@ class SourceAdapter(ABC):
         """Report whether the source is reachable."""
 
     @abstractmethod
-    def get_checkpoint(self) -> Optional[str]:
+    def get_checkpoint(self) -> str | None:
         """The cursor marking what has been consumed."""
 
     @abstractmethod
-    def restore_checkpoint(self, checkpoint: Optional[str]) -> None:
+    def restore_checkpoint(self, checkpoint: str | None) -> None:
         """Restore a previously stored cursor."""
 
 
@@ -111,13 +111,13 @@ class FeedAdapter(SourceAdapter):
     def __init__(self, fetcher, url: str):
         self.fetcher = fetcher
         self.url = url
-        self._checkpoint: Optional[str] = None
+        self._checkpoint: str | None = None
 
-    async def fetch_updates(self, cursor: Optional[str] = None) -> FetchResult:
+    async def fetch_updates(self, cursor: str | None = None) -> FetchResult:
         effective = cursor or self._checkpoint
         return await self.fetcher.fetch(self.url, checkpoint=effective)
 
-    def parse_response(self, response: FetchResult) -> List[NormalizedEntry]:
+    def parse_response(self, response: FetchResult) -> list[NormalizedEntry]:
         import feedparser
 
         if not response.ok:
@@ -128,7 +128,7 @@ class FeedAdapter(SourceAdapter):
         try:
             parsed = feedparser.parse(response.body)
         except Exception as exc:  # feedparser is lenient, but be explicit
-            raise AdapterError("parse_error", str(exc), transient=False)
+            raise AdapterError("parse_error", str(exc), transient=False) from exc
 
         # feedparser sets bozo on malformed input but still returns entries.
         # A bozo feed with no entries at all is a failure, not an empty result.
@@ -137,7 +137,7 @@ class FeedAdapter(SourceAdapter):
             raise AdapterError("malformed_feed", detail, transient=False)
 
         feed_language = _entry_language(parsed.get("feed"))
-        entries: List[NormalizedEntry] = []
+        entries: list[NormalizedEntry] = []
         for raw in parsed.get("entries", []):
             entries.append(_normalize_entry(raw, feed_language))
         return entries
@@ -153,10 +153,10 @@ class FeedAdapter(SourceAdapter):
             healthy=result.ok,
             detail=f"HTTP {result.status_code}")
 
-    def get_checkpoint(self) -> Optional[str]:
+    def get_checkpoint(self) -> str | None:
         return self._checkpoint
 
-    def restore_checkpoint(self, checkpoint: Optional[str]) -> None:
+    def restore_checkpoint(self, checkpoint: str | None) -> None:
         self._checkpoint = checkpoint
 
 
@@ -178,13 +178,13 @@ def make_adapter(source_type: str, fetcher, url: str) -> SourceAdapter:
 # ── entry normalization ──────────────────────────────────────────────
 
 
-def _entry_language(feed: Optional[Dict[str, Any]]) -> Optional[str]:
+def _entry_language(feed: dict[str, Any] | None) -> str | None:
     if not feed:
         return None
     return feed.get("language")
 
 
-def _parse_timestamp(value: Any) -> Optional[datetime]:
+def _parse_timestamp(value: Any) -> datetime | None:
     """Parse a feed timestamp, returning None when absent or unparseable.
 
     Never substitutes the current time — an unparseable timestamp is missing
@@ -194,11 +194,10 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
     if not value:
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
 
     import calendar
     import email.utils
-    import time
 
     text = str(value).strip()
     # RFC 2822, the usual RSS form.
@@ -206,27 +205,27 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
         parsed = email.utils.parsedate_to_datetime(text)
         if parsed is not None:
             return parsed if parsed.tzinfo else parsed.replace(
-                tzinfo=timezone.utc)
+                tzinfo=UTC)
     except (TypeError, ValueError):
         pass
     # ISO 8601, the usual Atom form.
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         pass
     # feedparser's own struct_time.
     if hasattr(value, "tm_year"):
         return datetime.fromtimestamp(
-            calendar.timegm(value), tz=timezone.utc)
+            calendar.timegm(value), tz=UTC)
     try:
-        return datetime.fromtimestamp(float(text), tz=timezone.utc)
+        return datetime.fromtimestamp(float(text), tz=UTC)
     except (ValueError, TypeError, OSError):
         return None
 
 
-def _normalize_entry(raw: Dict[str, Any],
-                     feed_language: Optional[str]) -> NormalizedEntry:
+def _normalize_entry(raw: dict[str, Any],
+                     feed_language: str | None) -> NormalizedEntry:
     link = _first_link(raw)
     published = _parse_timestamp(
         raw.get("published_parsed") or raw.get("published"))
@@ -255,7 +254,7 @@ def _normalize_entry(raw: Dict[str, Any],
     )
 
 
-def _first_link(raw: Dict[str, Any]) -> str:
+def _first_link(raw: dict[str, Any]) -> str:
     links = raw.get("links") or []
     for link in links:
         if link.get("rel") in (None, "alternate") and link.get("href"):
@@ -263,7 +262,7 @@ def _first_link(raw: Dict[str, Any]) -> str:
     return raw.get("link", "") or ""
 
 
-def _author(raw: Dict[str, Any]) -> Optional[str]:
+def _author(raw: dict[str, Any]) -> str | None:
     if raw.get("author"):
         return raw["author"]
     detail = raw.get("author_detail")

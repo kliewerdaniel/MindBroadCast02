@@ -20,13 +20,14 @@ mistake." The imitation detector surfaces that symptom. It does not fix the
 cause — the fix is genuinely independent models, an infrastructure decision.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass
 
 from .entities import (
-    ConsistencyDimension, ConsistencyReport, MemoryType, MemoryValidity,
-    PersonaAnalysis, PersonaConfig, ResolutionStatus,
+    ConsistencyDimension,
+    ConsistencyReport,
+    MemoryType,
+    PersonaAnalysis,
+    PersonaConfig,
 )
 from .memory import MemoryStore
 
@@ -37,14 +38,14 @@ class ConsistencyEvaluator:
     # A score below this on any dimension is worth flagging.
     CONCERN_THRESHOLD = 0.5
 
-    def __init__(self, memory: Optional[MemoryStore] = None):
+    def __init__(self, memory: MemoryStore | None = None):
         self.memory = memory or MemoryStore()
 
     def evaluate(
         self,
         persona: PersonaConfig,
-        recent_analyses: List[PersonaAnalysis],
-        prior_analyses: Optional[List[PersonaAnalysis]] = None,
+        recent_analyses: list[PersonaAnalysis],
+        prior_analyses: list[PersonaAnalysis] | None = None,
         unsupported_assertion_count: int = 0,
         config_changed: bool = False,
     ) -> ConsistencyReport:
@@ -63,7 +64,7 @@ class ConsistencyEvaluator:
     # ── the six dimensions ────────────────────────────────────────────
 
     def _voice_stability(
-        self, persona: PersonaConfig, analyses: List[PersonaAnalysis]
+        self, persona: PersonaConfig, analyses: list[PersonaAnalysis]
     ) -> ConsistencyDimension:
         """Stability of configured voice and style.
 
@@ -88,8 +89,8 @@ class ConsistencyEvaluator:
 
     def _assumption_consistency(
         self,
-        recent: List[PersonaAnalysis],
-        prior: List[PersonaAnalysis],
+        recent: list[PersonaAnalysis],
+        prior: list[PersonaAnalysis],
     ) -> ConsistencyDimension:
         """Consistency of recurring analytical assumptions.
 
@@ -118,7 +119,7 @@ class ConsistencyEvaluator:
             f"{retained}/{total} assumptions retained across analyses")
 
     def _acknowledges_contradiction(
-        self, persona: PersonaConfig, analyses: List[PersonaAnalysis]
+        self, persona: PersonaConfig, analyses: list[PersonaAnalysis]
     ) -> ConsistencyDimension:
         """Ability to acknowledge contradictory evidence.
 
@@ -142,7 +143,7 @@ class ConsistencyEvaluator:
     def _appropriate_revision(
         self,
         persona: PersonaConfig,
-        prior: List[PersonaAnalysis],
+        prior: list[PersonaAnalysis],
         config_changed: bool,
     ) -> ConsistencyDimension:
         """Appropriate revision of prior conclusions.
@@ -181,7 +182,7 @@ class ConsistencyEvaluator:
             f"{unsupported_assertion_count} unsupported assertion(s)")
 
     def _role_adherence(
-        self, persona: PersonaConfig, analyses: List[PersonaAnalysis]
+        self, persona: PersonaConfig, analyses: list[PersonaAnalysis]
     ) -> ConsistencyDimension:
         """Whether the persona stays within its configured role.
 
@@ -231,9 +232,9 @@ class ImitationDetector:
     CONCERN_THRESHOLD = 0.75
 
     def detect(
-        self, analyses: List[PersonaAnalysis]
-    ) -> List[ImitationFinding]:
-        findings: List[ImitationFinding] = []
+        self, analyses: list[PersonaAnalysis]
+    ) -> list[ImitationFinding]:
+        findings: list[ImitationFinding] = []
         for i, first in enumerate(analyses):
             for second in analyses[i + 1:]:
                 if first.persona_id == second.persona_id:
@@ -247,8 +248,8 @@ class ImitationDetector:
                 ))
         return findings
 
-    def concerning(self, analyses: List[PersonaAnalysis]
-                   ) -> List[ImitationFinding]:
+    def concerning(self, analyses: list[PersonaAnalysis]
+                   ) -> list[ImitationFinding]:
         return [f for f in self.detect(analyses) if f.is_concerning]
 
     def _similarity(self, a: PersonaAnalysis, b: PersonaAnalysis) -> float:

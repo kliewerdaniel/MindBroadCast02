@@ -7,16 +7,36 @@ with real-world occurrence and Correction was disguised as Evidence. Those
 tests asserted the old shape; these assert the spec shape.
 """
 
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
 
 from core.models import (
-    Story, Event, Claim, Evidence, ClaimEvidence, Entity, Source,
-    OwnershipGroup, Article, Correction, WorldSnapshot,
-    SourceType, EntityType, EntityStatus, EventStatus, StoryStatus,
-    ClaimType, ClaimStatus, CorrectionType, EvidenceRelationship,
-    EpistemicCategory, ExtractionStatus,
-    StoryFilter, ClaimFilter, SnapshotDiff,
+    Article,
+    Claim,
+    ClaimEvidence,
+    ClaimFilter,
+    ClaimStatus,
+    ClaimType,
+    Correction,
+    CorrectionType,
+    Entity,
+    EntityStatus,
+    EntityType,
+    EpistemicCategory,
+    Event,
+    EventStatus,
+    Evidence,
+    EvidenceRelationship,
+    ExtractionStatus,
+    OwnershipGroup,
+    SnapshotDiff,
+    Source,
+    SourceType,
+    Story,
+    StoryFilter,
+    StoryStatus,
+    WorldSnapshot,
     claim_status_from_str,
 )
 
@@ -172,7 +192,7 @@ class TestArticle:
 
     def test_published_and_first_seen_are_distinct(self):
         """§5.3: these are deliberately separate."""
-        published = datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc)
+        published = datetime(2026, 1, 1, 8, 0, tzinfo=UTC)
         article = Article(
             source_id="s", canonical_url="u", content_hash="h",
             published_at=published,
@@ -205,8 +225,8 @@ class TestEvent:
             assert not hasattr(event, field), f"Event must not carry {field}"
 
     def test_event_has_occurrence_window(self):
-        start = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
-        end = datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
+        end = datetime(2026, 1, 1, 11, 0, tzinfo=UTC)
         event = Event(canonical_title="T", occurred_at_start=start, occurred_at_end=end)
         assert event.occurred_at_start == start
         assert event.occurred_at_end == end
@@ -231,7 +251,7 @@ class TestStory:
 
     def test_story_tracks_coverage_history(self):
         """§5.5.1: coverage tracking fields."""
-        last = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+        last = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
         story = Story(
             canonical_title="T",
             last_broadcast_at=last,
@@ -244,7 +264,7 @@ class TestStory:
         assert story.audience_relevance_state == "high"
 
     def test_story_with_all_fields(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         story = Story(
             id="s1", canonical_title="Test", editorial_summary="A test story",
             status=StoryStatus.RESOLVED, created_at=now,
@@ -294,7 +314,7 @@ class TestClaim:
         assert claim.normalized_predicate == "approved"
 
     def test_valid_time_window(self):
-        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        start = datetime(2026, 1, 1, tzinfo=UTC)
         claim = Claim(
             canonical_proposition="X", valid_time_start=start, valid_time_end=None
         )

@@ -23,10 +23,10 @@ and real.
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..personas.entities import PersonaAnalysis, PersonaConfig
 from ..personas.analysis import SharedEvidencePacket
+from ..personas.entities import PersonaAnalysis, PersonaConfig
 
 
 @dataclass
@@ -41,14 +41,14 @@ class PersonaLens:
     name: str
     role: str = ""
     emphasis: str = ""                 # what this persona weighs most
-    questions: List[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)
     style: str = ""                    # vocabulary / tone
 
 
 # A small default newsroom: three distinct editorial lenses. These are the
 # substrate multi-persona broadcast runs on; each reads the same facts
 # differently, which is where real analytical value comes from.
-DEFAULT_LENSES: List[PersonaLens] = [
+DEFAULT_LENSES: list[PersonaLens] = [
     PersonaLens(
         persona_id="analyst",
         name="The Analyst",
@@ -78,7 +78,7 @@ DEFAULT_LENSES: List[PersonaLens] = [
 ]
 
 
-def _extract_json(text: str) -> Optional[Any]:
+def _extract_json(text: str) -> Any | None:
     if not text:
         return None
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
@@ -136,14 +136,14 @@ class LLMAnalysisFactory:
         return analyze
 
     def register(self, registry: Any, runner: Any,
-                 lenses: Optional[List[PersonaLens]] = None) -> List[str]:
+                 lenses: list[PersonaLens] | None = None) -> list[str]:
         """Register an analysis function per lens; return the persona ids.
 
         A PersonaConfig is registered in the registry so the orchestrator can
         resolve it, and the analysis function is registered on the runner.
         """
         lenses = lenses or DEFAULT_LENSES
-        ids: List[str] = []
+        ids: list[str] = []
         for lens in lenses:
             config = PersonaConfig(
                 id=lens.persona_id, name=lens.name, role=lens.role,
@@ -188,7 +188,8 @@ class LLMAnalysisFactory:
         try:
             data = post("/api/generate", payload)
         except Exception as exc:
-            import logging; logging.getLogger(__name__).warning(
+            import logging
+            logging.getLogger(__name__).warning(
                 "LLM analysis request failed: %s", exc)
             return ""
         return (data.get("response", "")

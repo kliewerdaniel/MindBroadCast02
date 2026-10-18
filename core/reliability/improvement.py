@@ -23,10 +23,9 @@ approval record, and approval is explicit.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
+from typing import Any
 
 # §28.2: parameters the improvement loop may adjust, within bounds.
 ADJUSTABLE_PARAMETERS = {
@@ -81,17 +80,17 @@ class QualityDimension:
 @dataclass
 class QualityAssessment:
     """§28.4. Seven dimensions, never collapsed to one score."""
-    dimensions: Dict[str, float] = field(default_factory=dict)
+    dimensions: dict[str, float] = field(default_factory=dict)
 
-    def dimension(self, name: str) -> Optional[QualityDimension]:
+    def dimension(self, name: str) -> QualityDimension | None:
         value = self.dimensions.get(name)
         return QualityDimension(name, value) if value is not None else None
 
     @property
-    def all_dimensions(self) -> List[QualityDimension]:
+    def all_dimensions(self) -> list[QualityDimension]:
         return [QualityDimension(k, v) for k, v in self.dimensions.items()]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             d.label: round(d.value, 4) for d in self.all_dimensions
         }
@@ -106,10 +105,10 @@ class ImprovementEvaluator:
     MAX_REGRESSION = 0.05
 
     def compare(self, baseline: QualityAssessment,
-                candidate: QualityAssessment) -> Dict[str, Any]:
+                candidate: QualityAssessment) -> dict[str, Any]:
         """Per-dimension comparison. No single opaque score."""
-        improvements: Dict[str, float] = {}
-        regressions: Dict[str, float] = {}
+        improvements: dict[str, float] = {}
+        regressions: dict[str, float] = {}
         for name in baseline.dimensions:
             base = baseline.dimensions[name]
             cand = candidate.dimensions.get(name, base)
@@ -139,14 +138,14 @@ class ImprovementProposal:
     parameter: str
     current_value: Any
     proposed_value: Any
-    baseline: Optional[QualityAssessment] = None
-    candidate: Optional[QualityAssessment] = None
+    baseline: QualityAssessment | None = None
+    candidate: QualityAssessment | None = None
     acceptance_criteria: str = ""
-    regression_tests: List[str] = field(default_factory=list)
+    regression_tests: list[str] = field(default_factory=list)
     rollback_procedure: str = ""
     state: ImprovementState = ImprovementState.OBSERVED
-    approved_by: Optional[str] = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    approved_by: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def is_adjustable(self) -> bool:
@@ -174,10 +173,10 @@ class RecursiveImprovementEngine:
     self-approves (§28.3). Protected parameters are refused outright (§28.2).
     """
 
-    def __init__(self, evaluator: Optional[ImprovementEvaluator] = None):
+    def __init__(self, evaluator: ImprovementEvaluator | None = None):
         self.evaluator = evaluator or ImprovementEvaluator()
-        self.proposals: List[ImprovementProposal] = []
-        self.deployment_log: List[Dict[str, Any]] = []
+        self.proposals: list[ImprovementProposal] = []
+        self.deployment_log: list[dict[str, Any]] = []
 
     def propose(
         self,
@@ -186,7 +185,7 @@ class RecursiveImprovementEngine:
         current_value: Any,
         proposed_value: Any,
         acceptance_criteria: str = "",
-        regression_tests: Optional[List[str]] = None,
+        regression_tests: list[str] | None = None,
         rollback_procedure: str = "",
     ) -> ImprovementProposal:
         """Create a proposal. Refuses protected parameters (§28.2)."""
@@ -255,7 +254,7 @@ class RecursiveImprovementEngine:
             "to": proposal.proposed_value,
             "approved_by": proposal.approved_by,
             "rollback": proposal.rollback_procedure,
-            "deployed_at": datetime.now(timezone.utc).isoformat(),
+            "deployed_at": datetime.now(UTC).isoformat(),
         })
         return True
 

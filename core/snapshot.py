@@ -4,16 +4,15 @@ A thin service over WorldStore.create_snapshot(), plus the snapshot-comparison
 conveniences the operator interface will need (spec §5.9, §18.5).
 """
 
-from typing import Optional, List
 
-from .models import WorldSnapshot, SnapshotDiff
+from .models import SnapshotDiff, WorldSnapshot
 from .persistence import WorldStore
 
 
 class SnapshotService:
     """Creates, compares, and retrieves world snapshots."""
 
-    def __init__(self, world_store: WorldStore, artifact_dir: Optional[str] = None):
+    def __init__(self, world_store: WorldStore, artifact_dir: str | None = None):
         self.world_store = world_store
         self.artifact_dir = artifact_dir
 
@@ -27,14 +26,14 @@ class SnapshotService:
         """Compare two snapshots and return the diff."""
         return await self.world_store.compare_snapshots(a_id, b_id)
 
-    async def get_latest_snapshot(self) -> Optional[WorldSnapshot]:
+    async def get_latest_snapshot(self) -> WorldSnapshot | None:
         """Get the most recent snapshot, or None if none exist."""
         snapshots = await self.world_store.list_snapshots()
         return snapshots[0] if snapshots else None
 
     async def get_snapshot_diff_from_previous(
         self, snapshot_id: str
-    ) -> Optional[SnapshotDiff]:
+    ) -> SnapshotDiff | None:
         """Diff between a snapshot and its recorded predecessor."""
         target = await self.world_store.get_snapshot(snapshot_id)
         if target is None:
@@ -45,5 +44,5 @@ class SnapshotService:
             target.parent_snapshot_id, snapshot_id
         )
 
-    async def list_snapshots(self) -> List[WorldSnapshot]:
+    async def list_snapshots(self) -> list[WorldSnapshot]:
         return await self.world_store.list_snapshots()

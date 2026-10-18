@@ -17,11 +17,6 @@ from __future__ import annotations
 import shutil
 import socket
 import subprocess
-import sys
-from pathlib import Path
-from typing import Dict, List, Optional
-
-from ..config import MODEL_LABEL_MAP, TTS_LABEL_MAP
 
 # LLMs that a conscious user has already downloaded and registered with Ollama
 # or is carrying as GGUF. The detector presents these first.
@@ -55,7 +50,9 @@ TTS_BACKENDS = [
     ("silence", "Silence (test/traffic, structural)",
      None),  # always available by construction
     ("qwen3-tts-http", "Qwen3-TTS (persistent server)",
-     ["sh", "-c", f"curl -s --max-time 3 http://127.0.0.1:7861/health > /dev/null 2>&1 && echo ok || echo down"]),
+     ["sh", "-c",
+      "curl -s --max-time 3 http://127.0.0.1:7861/health > /dev/null 2>&1 && echo ok || echo down"]  # noqa: E501
+    ),
 ]
 
 
@@ -71,7 +68,7 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def _subproc_ok(cmd: List[str]) -> bool:
+def _subproc_ok(cmd: list[str]) -> bool:
     try:
         subprocess.run(cmd, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=3)
@@ -89,7 +86,7 @@ def _http_ok(url: str, timeout: float = 3.0) -> bool:
         return False
 
 
-def detect_llm_backends() -> List[Dict[str, object]]:
+def detect_llm_backends() -> list[dict[str, object]]:
     """Present the LLM backends this machine can plausibly run, with a
     quality/priority hint so the user can pick the best for their RAM."""
     results = []
@@ -97,7 +94,8 @@ def detect_llm_backends() -> List[Dict[str, object]]:
     # Ollama is simplest: the app detects models already installed via the API.
     if _which("ollama"):
         try:
-            import json, urllib.request
+            import json
+            import urllib.request
             with urllib.request.urlopen(
                     "http://localhost:11434/api/tags", timeout=3) as resp:
                 data = json.loads(resp.read().decode())
@@ -136,7 +134,7 @@ def detect_llm_backends() -> List[Dict[str, object]]:
     return results
 
 
-def detect_tts_backends() -> List[Dict[str, object]]:
+def detect_tts_backends() -> list[dict[str, object]]:
     """Present TTS backends this machine can actually speak with."""
     results = []
     # eSpeak is checked once: it is a system binary and cheap, so if it exists

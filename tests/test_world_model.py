@@ -9,25 +9,35 @@ suppressing a saturated story, and letting a replay see the future.
 """
 
 import asyncio
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
-from core.models import Story, StoryStatus, Source, Article
+import pytest
+
+from core.models import Story
 from core.persistence import WorldStore
 from core.world_model.changes import (
-    ChangeDetector, ChangeKind, KnownState, IncomingState, MaterialChange,
     DEFAULT_WEIGHTS,
+    ChangeDetector,
+    ChangeKind,
+    IncomingState,
+    KnownState,
+    MaterialChange,
 )
+from core.world_model.coverage import CoverageFacts, CoverageModel
 from core.world_model.ranking import (
-    StoryRanker, StoryFacts, FactorValue, rank_stories,
     MAX_AUDIENCE_CONTRIBUTION,
+    StoryFacts,
+    StoryRanker,
+    rank_stories,
 )
-from core.world_model.coverage import CoverageModel, CoverageFacts
-from core.world_model.stories import StoryEngine, ClaimRecord, _identity_key
 from core.world_model.replay import (
-    filter_as_of, assert_no_leakage, ReplayWindow, reconstruct_knowledge,
-    development_timeline, snapshot_consistency_check,
+    assert_no_leakage,
+    development_timeline,
+    filter_as_of,
+    reconstruct_knowledge,
+    snapshot_consistency_check,
 )
+from core.world_model.stories import ClaimRecord, StoryEngine, _identity_key
 
 
 def run(coro):
@@ -38,7 +48,7 @@ def run(coro):
         loop.close()
 
 
-NOW = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
 
 
 def change(kind, hours_ago, significance=1.0):
@@ -628,7 +638,7 @@ class TestUncertaintyIsLocal:
     def test_heterogeneous_claim_statuses_survive_in_one_story(self, store):
         """A story holds well-established facts and one disputed claim."""
         async def scenario():
-            from core.models import Claim, ClaimType, ClaimStatus
+            from core.models import Claim, ClaimStatus, ClaimType
             established = await store.add_claim(Claim(
                 canonical_proposition="The vote occurred.",
                 claim_type=ClaimType.OBSERVATIONAL,

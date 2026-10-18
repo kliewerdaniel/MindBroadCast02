@@ -33,16 +33,18 @@ import re
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..broadcast.providers import (
-    GenerationResult, ProviderCapabilities, ProviderError, ProviderTimeout,
-    ProviderUnavailable, SynthesisRequest, SynthesisResult, TTSProvider,
+    GenerationResult,
+    ProviderCapabilities,
+    ProviderError,
+    ProviderTimeout,
+    ProviderUnavailable,
+    SynthesisRequest,
+    SynthesisResult,
     UnsupportedCapability,
 )
-
 
 # ── Local-only guard ─────────────────────────────────────────────────
 
@@ -80,7 +82,7 @@ def _looks_like_json(text: str) -> bool:
     return _extract_json(text) is not None
 
 
-def _extract_json(text: str) -> Optional[Any]:
+def _extract_json(text: str) -> Any | None:
     """First balanced JSON object/array, from the first opener.
 
     Handles reasoning wrappers, ```json fences, and prose around the JSON.
@@ -109,7 +111,7 @@ def _extract_json(text: str) -> Optional[Any]:
     return None
 
 
-def _coerce_to_schema(structured: Any, schema: Dict[str, Any]) -> Any:
+def _coerce_to_schema(structured: Any, schema: dict[str, Any]) -> Any:
     """Adapt the model's actual output shape to the requested schema.
 
     Real models do not always honour the requested keys. qwen3:4b, asked for a
@@ -211,8 +213,8 @@ class OllamaProvider:
         except Exception:
             return False
 
-    def _post(self, path: str, payload: Dict[str, Any],
-              _retries: int = 5) -> Dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any],
+              _retries: int = 5) -> dict[str, Any]:
         """POST with bounded retry on transient server errors (§14.6).
 
         qwen3:4b on CPU intermittently returns HTTP 500 "token repeat limit
@@ -223,7 +225,7 @@ class OllamaProvider:
         """
         import time as _time
         body = json.dumps(payload).encode()
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(_retries):
             req = urllib.request.Request(
                 f"{self.base_url}{path}", data=body,
@@ -237,7 +239,7 @@ class OllamaProvider:
                 if 400 <= error.code < 500:
                     raise ProviderUnavailable(
                         f"ollama rejected request ({error.code}): "
-                        f"{error.read().decode()[:200]}")
+                        f"{error.read().decode()[:200]}") from error
                 last_error = ProviderUnavailable(
                     f"ollama server error {error.code} (attempt "
                     f"{attempt + 1}/{_retries})")
@@ -250,7 +252,7 @@ class OllamaProvider:
                 _time.sleep(0.5 * (attempt + 1))
         raise last_error or ProviderUnavailable("ollama request failed")
 
-    async def generate(self, request: Dict[str, Any]) -> GenerationResult:
+    async def generate(self, request: dict[str, Any]) -> GenerationResult:
         self.attempt_count += 1
         started = time.monotonic()
         objective = request.get("objective", "")
@@ -298,7 +300,7 @@ class OllamaProvider:
         )
 
     async def generate_structured(
-        self, request: Dict[str, Any], schema: Dict[str, Any]
+        self, request: dict[str, Any], schema: dict[str, Any]
     ) -> GenerationResult:
         if not self._capabilities.structured_output:
             raise UnsupportedCapability(
@@ -358,9 +360,9 @@ class OllamaEmbeddingProvider:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
-        self.dimension: Optional[int] = None
+        self.dimension: int | None = None
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         payload = {"model": self.model, "prompt": text}
         body = json.dumps(payload).encode()
         req = urllib.request.Request(
@@ -371,7 +373,7 @@ class OllamaEmbeddingProvider:
                 data = json.loads(resp.read().decode())
         except urllib.error.URLError as error:
             raise ProviderUnavailable(
-                f"ollama embeddings unreachable: {error}")
+                f"ollama embeddings unreachable: {error}") from error
         vector = data.get("embedding", [])
         if vector and self.dimension is None:
             self.dimension = len(vector)

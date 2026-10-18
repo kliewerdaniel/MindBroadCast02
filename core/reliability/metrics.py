@@ -12,9 +12,9 @@ The six §21.2 subsystems, each with its named metrics.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class Subsystem(Enum):
@@ -40,15 +40,15 @@ class Metric:
     value: float
     subsystem: Subsystem
     kind: str = "counter"          # counter | gauge | rate
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class MetricsRegistry:
     """The single source of subsystem state (§21.5)."""
 
     def __init__(self):
-        self._metrics: Dict[str, Metric] = {}
-        self._error_counts: Dict[str, int] = {}
+        self._metrics: dict[str, Metric] = {}
+        self._error_counts: dict[str, int] = {}
 
     def increment(self, subsystem: Subsystem, name: str,
                   amount: float = 1.0) -> None:
@@ -58,7 +58,7 @@ class MetricsRegistry:
             self._metrics[key] = Metric(name, amount, subsystem, "counter")
         else:
             existing.value += amount
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
 
     def set_gauge(self, subsystem: Subsystem, name: str, value: float) -> None:
         key = f"{subsystem.value}.{name}"
@@ -74,7 +74,7 @@ class MetricsRegistry:
         metric = self._metrics.get(f"{subsystem.value}.{name}")
         return metric.value if metric else 0.0
 
-    def subsystem_metrics(self, subsystem: Subsystem) -> Dict[str, float]:
+    def subsystem_metrics(self, subsystem: Subsystem) -> dict[str, float]:
         prefix = f"{subsystem.value}."
         return {k[len(prefix):]: m.value for k, m in self._metrics.items()
                 if k.startswith(prefix)}
@@ -99,7 +99,7 @@ class MetricsRegistry:
             return HealthState.DEGRADED
         return HealthState.HEALTHY
 
-    def all_health(self) -> Dict[str, str]:
+    def all_health(self) -> dict[str, str]:
         """§21.5's pipeline view, from real subsystem checks."""
         return {s.value: self.health(s).value for s in Subsystem}
 
@@ -107,7 +107,7 @@ class MetricsRegistry:
         """§21.2/§23.3: expose the backlog through observability."""
         return self.get(subsystem, "backlog")
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return {
             "metrics": {k: m.value for k, m in self._metrics.items()},
             "health": self.all_health(),

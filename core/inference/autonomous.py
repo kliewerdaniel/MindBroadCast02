@@ -20,21 +20,21 @@ inventing a bulletin (§27.4).
 """
 
 import asyncio
+import contextlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from ..compiler.orchestrator import KnowledgeCompiler
-from ..ingestion.pipeline import IngestionPipeline
 from ..ingestion.fetcher import Fetcher
+from ..ingestion.pipeline import IngestionPipeline
 from ..ingestion.transport import AiohttpTransport
-from ..models import Source, SourceType, Story
+from ..models import Source, SourceType
 from ..persistence import WorldStore
 from ..world_model.ranking import StoryFacts, StoryRanker
 from ..world_model.stories import StoryEngine
-from .runtime import LiveRuntime, RuntimeConfig, TranscriptLine
-
+from .runtime import LiveRuntime, TranscriptLine
 
 # Bound the compile backlog per cycle (§23.3: work is bounded). A cycle that
 # inherits a large never-compiled backlog drains it over several cycles rather
@@ -49,13 +49,13 @@ _MAX_FACTS_PER_SEGMENT = 6
 @dataclass
 class BroadcastCycle:
     """What one ingest->decide->broadcast cycle observed and did."""
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     articles_ingested: int = 0
     claims_compiled: int = 0
     stories_ranked: int = 0
-    chosen_story_id: Optional[str] = None
+    chosen_story_id: str | None = None
     chosen_story_title: str = ""
-    segment: Optional[TranscriptLine] = None
+    segment: TranscriptLine | None = None
     silent_reason: str = ""
 
     @property
@@ -70,10 +70,10 @@ class AutonomousBroadcaster:
     def __init__(
         self,
         runtime: LiveRuntime,
-        store: Optional[WorldStore] = None,
-        ranker: Optional[StoryRanker] = None,
+        store: WorldStore | None = None,
+        ranker: StoryRanker | None = None,
         db_path: str = ":memory:",
-        on_segment: Optional[Any] = None,
+        on_segment: Any | None = None,
     ):
         self.runtime = runtime
         self.on_segment = on_segment
@@ -81,14 +81,14 @@ class AutonomousBroadcaster:
         # its phases. A cycle takes minutes (25 feeds, then LLM compilation),
         # and without this the UI could only say "running" and then nothing —
         # the user had no way to tell a working station from a hung one.
-        self.on_progress: Optional[Any] = None
+        self.on_progress: Any | None = None
         self.store = store or WorldStore(db_path)
         self.ranker = ranker or StoryRanker()
         self.fetcher = Fetcher(transport=AiohttpTransport())
         self.ingestion = IngestionPipeline(self.store, self.fetcher)
         self.compiler = KnowledgeCompiler(self.store)
         self.story_engine = StoryEngine(self.store)
-        self.cycles: List[BroadcastCycle] = []
+        self.cycles: list[BroadcastCycle] = []
         # Durable continuity state (§30 "survives process restarts"): the set
         # of aired story ids is persisted to a sibling file so a restart does
         # not re-air. Operational state, not domain data — so a small JSON
@@ -102,12 +102,12 @@ class AutonomousBroadcaster:
         self._source_cursor: int = 0
         # Region-interleaved rotation order, recomputed only when the enabled
         # source set changes (see _rotation_order).
-        self._rotation_key: Optional[tuple] = None
-        self._rotation_cache: List[Source] = []
+        self._rotation_key: tuple | None = None
+        self._rotation_cache: list[Source] = []
         self._stop = False
         self._load_state()
 
-    def _derive_state_path(self, db_path: str) -> Optional[str]:
+    def _derive_state_path(self, db_path: str) -> str | None:
         """A sibling JSON file for continuity state; None for in-memory DBs."""
         if db_path in (":memory:", ""):
             return None
@@ -143,12 +143,12 @@ class AutonomousBroadcaster:
         # Without this, a user (or an attacker who can reach the console) could
         # register a URL that resolves to an internal address, and the station
         # would fetch from it during the next cycle.
-        from ..ingestion.security import validate_url, SecurityViolation
+        from ..ingestion.security import SecurityViolation, validate_url
         try:
             validate_url(endpoint)
         except SecurityViolation:
             raise ValueError(
-                f"endpoint rejected by fetch policy: {endpoint}")
+                f"endpoint rejected by fetch policy: {endpoint}") from None
         # Idempotent on endpoint: re-registering a feed returns the existing
         # source rather than creating a duplicate. The endpoint is the stable
         # identity; the display name is cosmetic.
@@ -160,8 +160,8 @@ class AutonomousBroadcaster:
         return await self.store.add_source(source)
 
     async def register_world_sources(
-        self, regions: Optional[List[str]] = None
-    ) -> Dict[str, str]:
+        self, regions: list[str] | None = None
+    ) -> dict[str, str]:
         """Register the curated world feeds; return {name: source_id}.
 
         Region-balanced so the broadcast draws from across the world, not one
@@ -169,17 +169,14 @@ class AutonomousBroadcaster:
         new endpoints create rows. `regions` limits to a subset.
         """
         from .world_sources import WORLD_FEEDS, all_feeds
-        if regions:
-            feeds = [s for r in regions for s in WORLD_FEEDS.get(r, [])]
-        else:
-            feeds = all_feeds()
-        registered: Dict[str, str] = {}
+        feeds = [s for r in regions for s in WORLD_FEEDS.get(r, [])] if regions else all_feeds()
+        registered: dict[str, str] = {}
         for feed in feeds:
             registered[feed.name] = await self.register_source(
                 feed.name, feed.url)
         return registered
 
-    async def run_cycle(self, source_id: Optional[str] = None
+    async def run_cycle(self, source_id: str | None = None
                         ) -> BroadcastCycle:
         """One full cycle: ingest -> compile -> cluster -> rank -> broadcast."""
         cycle = BroadcastCycle()
@@ -293,16 +290,14 @@ class AutonomousBroadcaster:
         """
         if self.on_progress is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.on_progress({"phase": phase, "detail": detail,
                               "current": current, "total": total})
-        except Exception:                        # noqa: BLE001
-            pass
 
-    async def run_forever(self, source_id: Optional[str] = None,
+    async def run_forever(self, source_id: str | None = None,
                           poll_seconds: float = 30.0,
-                          on_cycle: Optional[Any] = None,
-                          on_wait: Optional[Any] = None,
+                          on_cycle: Any | None = None,
+                          on_wait: Any | None = None,
                           max_cycles: int = 0) -> None:
         """The continuous station: watch, decide, air, repeat.
 
@@ -314,7 +309,6 @@ class AutonomousBroadcaster:
         sleep between cycles — the window in which a TTS model that was still
         loading at startup can come up and be adopted.
         """
-        import asyncio
         self._stop = False
         count = 0
         while not self._stop:
@@ -365,7 +359,7 @@ class AutonomousBroadcaster:
 
     # ── helpers ───────────────────────────────────────────────────────
 
-    async def _pick_source(self, source_id: Optional[str]) -> Optional[Source]:
+    async def _pick_source(self, source_id: str | None) -> Source | None:
         if source_id:
             return await self.store.get_source(source_id)
         # Not pinned: rotate through enabled sources so a multi-source
@@ -386,7 +380,7 @@ class AutonomousBroadcaster:
         self._source_cursor += 1
         return chosen
 
-    def _rotation_order(self, sources: List[Source]) -> List[Source]:
+    def _rotation_order(self, sources: list[Source]) -> list[Source]:
         """Sources in region-interleaved order, stable within a cycle.
 
         Recomputed when the enabled set changes, so adding or disabling a feed
@@ -408,13 +402,13 @@ class AutonomousBroadcaster:
         return self._rotation_cache
 
     async def _recent_articles(self, source_id: str, limit: int
-                               ) -> List[Any]:
+                               ) -> list[Any]:
         articles = await self.store.list_articles()
         from_source = [a for a in articles if a.source_id == source_id]
         return from_source[-limit:] if limit else from_source
 
-    async def _uncompiled_articles(self, source_id: Optional[str] = None
-                                   ) -> List[Any]:
+    async def _uncompiled_articles(self, source_id: str | None = None
+                                   ) -> list[Any]:
         """Articles that have produced no claims yet — the compile backlog.
 
         Selecting by "last N ingested" is wrong: a cycle that ingests few
@@ -430,7 +424,7 @@ class AutonomousBroadcaster:
         compiled = set(have_claims.values())
         return [a for a in articles if a.id not in compiled]
 
-    async def _claim_records(self) -> List[Any]:
+    async def _claim_records(self) -> list[Any]:
         from ..world_model.stories import ClaimRecord
         claims = await self.store.list_claims()
         # Claims carry no article column; derive it via the evidence join so
@@ -456,12 +450,12 @@ class AutonomousBroadcaster:
         groups — so the choice of what to air reflects the content rather than
         being arbitrary.
         """
-        from ..world_model.changes import MaterialChange, ChangeKind
+        from ..world_model.changes import ChangeKind, MaterialChange
         facts = StoryFacts(story_id=candidate.story_id,
                            title=candidate.canonical_title,
-                           now=datetime.now(timezone.utc))
-        claim_texts: List[str] = []
-        newest: Optional[datetime] = None
+                           now=datetime.now(UTC))
+        claim_texts: list[str] = []
+        newest: datetime | None = None
         for claim_id in getattr(candidate, "claim_ids", []):
             claim = await self.store.get_claim(claim_id)
             if claim is None:
@@ -501,14 +495,14 @@ class AutonomousBroadcaster:
         text = (candidate.canonical_title or "").lower()
         return any(m in text for m in markers)
 
-    def _candidate_for(self, story_id: str, candidates: List[Any]
-                       ) -> Optional[Any]:
+    def _candidate_for(self, story_id: str, candidates: list[Any]
+                       ) -> Any | None:
         for candidate in candidates:
             if candidate.story_id == story_id:
                 return candidate
         return candidates[0] if candidates else None
 
-    async def _topic_from_story(self, candidate: Any) -> Optional[Dict[str, Any]]:
+    async def _topic_from_story(self, candidate: Any) -> dict[str, Any] | None:
         """Turn a story candidate into a runtime topic grounded in real claims."""
         if candidate is None or not candidate.claim_ids:
             return None

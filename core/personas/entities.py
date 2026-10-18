@@ -14,12 +14,11 @@ meaningful rather than theatrical.
 """
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..models import _new_id, _utcnow
-
 
 # ── §12.5 Disagreement types ─────────────────────────────────────────
 
@@ -72,12 +71,12 @@ class AnalyticalPreferences:
     is true (§12.3).
     """
     analytical_style: str = ""
-    epistemic: Dict[str, Any] = field(default_factory=dict)
-    rhetorical: Dict[str, Any] = field(default_factory=dict)
-    interaction: Dict[str, Any] = field(default_factory=dict)
-    speaking_style: Dict[str, Any] = field(default_factory=dict)
+    epistemic: dict[str, Any] = field(default_factory=dict)
+    rhetorical: dict[str, Any] = field(default_factory=dict)
+    interaction: dict[str, Any] = field(default_factory=dict)
+    speaking_style: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "analytical_style": self.analytical_style,
             "epistemic": dict(self.epistemic),
@@ -102,14 +101,14 @@ class PersonaConfig:
     name: str = ""
     role: str = ""
     description: str = ""
-    voice_profile_id: Optional[str] = None
+    voice_profile_id: str | None = None
     preferences: AnalyticalPreferences = field(
         default_factory=AnalyticalPreferences)
-    memory_policy: Dict[str, Any] = field(default_factory=dict)
+    memory_policy: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
     configuration_version: int = 1
     created_at: datetime = field(default_factory=_utcnow)
-    superseded_by_version: Optional[int] = None
+    superseded_by_version: int | None = None
 
     def revised(self, **changes) -> "PersonaConfig":
         """§12.2: a new version, not an in-place edit.
@@ -146,9 +145,9 @@ class PersonaAnalysis:
     persona_version: int = 1
     question: str = ""
     position: str = ""
-    assumptions: List[str] = field(default_factory=list)
-    evidence_used: List[str] = field(default_factory=list)
-    shared_facts_accepted: List[str] = field(default_factory=list)
+    assumptions: list[str] = field(default_factory=list)
+    evidence_used: list[str] = field(default_factory=list)
+    shared_facts_accepted: list[str] = field(default_factory=list)
     confidence: float = 0.0
     generated_at: datetime = field(default_factory=_utcnow)
 
@@ -175,9 +174,9 @@ class Disagreement:
     position_a: str = ""
     persona_b_id: str = ""
     position_b: str = ""
-    shared_facts: List[str] = field(default_factory=list)
-    disputed_assumptions: List[str] = field(default_factory=list)
-    evidence_references: List[str] = field(default_factory=list)
+    shared_facts: list[str] = field(default_factory=list)
+    disputed_assumptions: list[str] = field(default_factory=list)
+    evidence_references: list[str] = field(default_factory=list)
     disagreement_type: DisagreementType = DisagreementType.FACTUAL_UNCERTAINTY
     resolution_status: ResolutionStatus = ResolutionStatus.UNRESOLVED
     detected_at: datetime = field(default_factory=_utcnow)
@@ -208,12 +207,12 @@ class PersonaMemoryEntry:
     memory_type: MemoryType = MemoryType.EPISODIC
     content: str = ""
     provenance: str = ""
-    source_segment_id: Optional[str] = None
-    evidence_references: List[str] = field(default_factory=list)
+    source_segment_id: str | None = None
+    evidence_references: list[str] = field(default_factory=list)
     validity: MemoryValidity = MemoryValidity.ACTIVE
     confidence: float = 0.5
     created_at: datetime = field(default_factory=_utcnow)
-    revises_entry_id: Optional[str] = None
+    revises_entry_id: str | None = None
 
     def to_context_line(self) -> str:
         """The compact form that enters context. Bounded by the retrieval cap."""
@@ -238,7 +237,7 @@ class ConsistencyDimension:
 class ConsistencyReport:
     """§12.7. The six measured dimensions."""
     persona_id: str = ""
-    dimensions: List[ConsistencyDimension] = field(default_factory=list)
+    dimensions: list[ConsistencyDimension] = field(default_factory=list)
     evaluated_at: datetime = field(default_factory=_utcnow)
 
     @property
@@ -248,10 +247,10 @@ class ConsistencyReport:
         return sum(d.score for d in self.dimensions) / len(self.dimensions)
 
     @property
-    def concerning(self) -> List[ConsistencyDimension]:
+    def concerning(self) -> list[ConsistencyDimension]:
         return [d for d in self.dimensions if d.is_concerning]
 
-    def dimension(self, name: str) -> Optional[ConsistencyDimension]:
+    def dimension(self, name: str) -> ConsistencyDimension | None:
         for d in self.dimensions:
             if d.name == name:
                 return d
@@ -265,7 +264,7 @@ class ConsistencyReport:
 class DialogueTurn:
     persona_id: str
     text: str
-    addresses_disagreement_id: Optional[str] = None
+    addresses_disagreement_id: str | None = None
     speech_act: str = "interpretation"
 
 
@@ -274,15 +273,15 @@ class StructuredExchange:
     """§12.4 step 6. Built from recorded disagreements, not improvised."""
     id: str = field(default_factory=_new_id)
     question: str = ""
-    turns: List[DialogueTurn] = field(default_factory=list)
-    disagreements_addressed: List[str] = field(default_factory=list)
-    shared_facts: List[str] = field(default_factory=list)
-    unresolved: List[str] = field(default_factory=list)
+    turns: list[DialogueTurn] = field(default_factory=list)
+    disagreements_addressed: list[str] = field(default_factory=list)
+    shared_facts: list[str] = field(default_factory=list)
+    unresolved: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utcnow)
 
     @property
-    def personas(self) -> List[str]:
-        seen: List[str] = []
+    def personas(self) -> list[str]:
+        seen: list[str] = []
         for turn in self.turns:
             if turn.persona_id not in seen:
                 seen.append(turn.persona_id)

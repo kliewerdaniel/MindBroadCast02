@@ -25,12 +25,11 @@ same sentence with different quantities does not.
 """
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..models import Claim, Evidence, EvidenceRelationship, ClaimStatus
+from ..models import Claim, EvidenceRelationship
 
 
 @dataclass
@@ -45,18 +44,18 @@ class CanonicalKnowledgeUnit:
     epistemic_status: str
     claim_id: str
     claim_type: str
-    source_references: List[str] = field(default_factory=list)
-    evidence_references: List[str] = field(default_factory=list)
-    supporting_references: List[str] = field(default_factory=list)
-    contradicting_references: List[str] = field(default_factory=list)
-    attributing_references: List[str] = field(default_factory=list)
-    entity_references: List[str] = field(default_factory=list)
-    event_references: List[str] = field(default_factory=list)
-    validity_interval: Dict[str, Optional[str]] = field(default_factory=dict)
-    observation_interval: Dict[str, Optional[str]] = field(default_factory=dict)
+    source_references: list[str] = field(default_factory=list)
+    evidence_references: list[str] = field(default_factory=list)
+    supporting_references: list[str] = field(default_factory=list)
+    contradicting_references: list[str] = field(default_factory=list)
+    attributing_references: list[str] = field(default_factory=list)
+    entity_references: list[str] = field(default_factory=list)
+    event_references: list[str] = field(default_factory=list)
+    validity_interval: dict[str, str | None] = field(default_factory=dict)
+    observation_interval: dict[str, str | None] = field(default_factory=dict)
     version: int = 1
-    supersedes_version: Optional[str] = None
-    provenance_manifest: Dict[str, Any] = field(default_factory=dict)
+    supersedes_version: str | None = None
+    provenance_manifest: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_supported(self) -> bool:
@@ -66,7 +65,7 @@ class CanonicalKnowledgeUnit:
     def has_counterevidence(self) -> bool:
         return bool(self.contradicting_references)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "canonical_content": self.canonical_content,
@@ -91,8 +90,8 @@ class CanonicalKnowledgeUnit:
 
 def canonical_identity(
     claim: Claim,
-    quantities: Optional[List[Dict[str, Any]]] = None,
-    temporals: Optional[List[Dict[str, Any]]] = None,
+    quantities: list[dict[str, Any]] | None = None,
+    temporals: list[dict[str, Any]] | None = None,
 ) -> str:
     """The stable identity of a CKU (§8.3.1).
 
@@ -114,7 +113,7 @@ def canonical_identity(
     return digest[:32]
 
 
-def _unit(unit: Optional[str]) -> str:
+def _unit(unit: str | None) -> str:
     if not unit:
         return ""
     text = unit.lower().strip()
@@ -192,13 +191,13 @@ class CKUAssembler:
             },
         )
 
-    async def group_by_identity(self, claims: List[Claim]) -> Dict[str, List[Claim]]:
+    async def group_by_identity(self, claims: list[Claim]) -> dict[str, list[Claim]]:
         """Group claims that share a canonical identity.
 
         This is what lets several articles support one CKU without the system
         treating each restatement as new knowledge.
         """
-        groups: Dict[str, List[Claim]] = {}
+        groups: dict[str, list[Claim]] = {}
         for claim in claims:
             metadata = claim.metadata_json or {}
             identity = canonical_identity(
@@ -210,7 +209,7 @@ class CKUAssembler:
         return groups
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()

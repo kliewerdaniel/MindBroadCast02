@@ -14,12 +14,9 @@ canonical record — and resolution is strictly separate.
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from ..models import EntityType
 from .structural import NormalizedDocument, Span
-
 
 # spaCy labels mapped onto the domain EntityType set. Unmapped labels are kept
 # with their original label so nothing is silently discarded.
@@ -52,7 +49,7 @@ class EntityMention:
     start: int
     end: int
     raw_label: str
-    entity_type: Optional[EntityType]
+    entity_type: EntityType | None
     sentence_index: int = 0
     extraction_method: str = "spacy_ner"
     extraction_version: str = "1.0.0"
@@ -65,14 +62,14 @@ class EntityMention:
 @dataclass
 class EntityExtractionResult:
     article_id: str
-    mentions: List[EntityMention] = field(default_factory=list)
+    mentions: list[EntityMention] = field(default_factory=list)
     pass_name: str = "entity_extraction"
     pass_version: str = "1.0.0"
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
-    def distinct_texts(self) -> List[str]:
-        seen: List[str] = []
+    def distinct_texts(self) -> list[str]:
+        seen: list[str] = []
         for mention in self.mentions:
             if mention.text not in seen:
                 seen.append(mention.text)
@@ -120,7 +117,7 @@ class EntityExtractor:
         assert nlp is not self._UNAVAILABLE
         doc = nlp(document.source_text)
         for ent in doc.ents:
-            entity_type = _SPACY_TO_ENTITY_TYPE.get(ent.label_, None)
+            entity_type = _SPACY_TO_ENTITY_TYPE.get(ent.label_)
             if ent.label_ not in _SPACY_TO_ENTITY_TYPE:
                 result.warnings.append(
                     f"unmapped spaCy label {ent.label_!r} retained raw")

@@ -22,9 +22,7 @@ Localhost-only: it binds 127.0.0.1 and refuses a non-local host.
 
 import argparse
 import io
-import json
-import os
-import sys
+import logging
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -43,9 +41,9 @@ def _load_model(model_id: str):
 
 
 def build_app(model_id: str):
-    from flask import Flask, request, Response
     import numpy as np
     import soundfile as sf
+    from flask import Flask, Response, request
 
     app = Flask(__name__)
     state = {"model": None, "model_id": model_id}
@@ -111,7 +109,7 @@ def main(argv=None):
 
     _refuse_non_local(args.host)
     app = build_app(args.model)
-    import logging; logging.getLogger(__name__).info(
+    logging.getLogger(__name__).info(
         f"Qwen3-TTS server on http://{args.host}:{args.port} "
         f"model={args.model}")
     app.run(host=args.host, port=args.port, threaded=False)

@@ -11,13 +11,13 @@ corruption or a specific migration makes it necessary.
 
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from .models import OperatingMode
-from .persistence import Database, WorldStore, SCHEMA_VERSION, _utcnow
 from .migrations import MigrationRunner, default_migrations
+from .models import OperatingMode
+from .persistence import Database, WorldStore, _utcnow
 
 
 class RecoveryIssue(Enum):
@@ -33,13 +33,13 @@ class RecoveryIssue(Enum):
 class RecoveryReport:
     """The durable record of what recovery found and did."""
     started_at: datetime = field(default_factory=_utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     schema_version: int = 0
-    migrations_applied: List[int] = field(default_factory=list)
+    migrations_applied: list[int] = field(default_factory=list)
     requeued_outbox: int = 0
     pending_outbox: int = 0
-    issues: List[Dict[str, Any]] = field(default_factory=list)
-    steps_completed: List[str] = field(default_factory=list)
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    steps_completed: list[str] = field(default_factory=list)
 
     @property
     def has_integrity_violations(self) -> bool:
@@ -52,7 +52,7 @@ class RecoveryReport:
     def ok(self) -> bool:
         return not self.has_integrity_violations
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "started_at": self.started_at.isoformat(),
             "completed_at": (
@@ -79,13 +79,13 @@ class Lifecycle:
     configuration is centralized rather than per-module (spec §6.1).
     """
 
-    def __init__(self, db_path: str, artifact_dir: Optional[str] = None):
+    def __init__(self, db_path: str, artifact_dir: str | None = None):
         self.db_path = db_path
         self.artifact_dir = artifact_dir
         self.db = Database(db_path)
-        self.store: Optional[WorldStore] = None
+        self.store: WorldStore | None = None
         self.mode = OperatingMode.STOPPED
-        self.last_recovery: Optional[RecoveryReport] = None
+        self.last_recovery: RecoveryReport | None = None
 
     # ── startup ──────────────────────────────────────────
 
