@@ -15,10 +15,9 @@ Boundaries:
   not a full Readability.js port.
 """
 
-from typing import Optional
 
 
-def extract_body_text(html: str, min_chars: int = 400) -> Optional[str]:
+def extract_body_text(html: str, min_chars: int = 400) -> str | None:
     """Extract readable article text from HTML, or None if too thin.
 
     Prefers semantic article containers, then falls back to the densest
@@ -61,7 +60,7 @@ def extract_body_text(html: str, min_chars: int = 400) -> Optional[str]:
 
 
 async def enrich_with_body(fetcher: object, url: str,
-                           min_chars: int = 400) -> Optional[str]:
+                           min_chars: int = 400) -> str | None:
     """Fetch `url` and return its readable body text, or None on any failure.
 
     Fail-soft by contract: the caller decides what to do with None. Never

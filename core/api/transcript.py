@@ -18,12 +18,14 @@ whether the segment completed / was interrupted / was abandoned.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..broadcast.entities import (
-    BroadcastScript, ContentState, Segment, SegmentStatus, ScriptTurn,
+    BroadcastScript,
+    ContentState,
+    Segment,
 )
 
 
@@ -50,20 +52,20 @@ class TranscriptEntry:
     content_state: str = ContentState.GENERATED.value
 
     # Timestamps where available.
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     playback_state: str = "idle"
 
     # References and classification.
-    story_references: List[str] = field(default_factory=list)
-    evidence_links: List[str] = field(default_factory=list)
-    epistemic_classification: Optional[str] = None
-    speech_act: Optional[str] = None
+    story_references: list[str] = field(default_factory=list)
+    evidence_links: list[str] = field(default_factory=list)
+    epistemic_classification: str | None = None
+    speech_act: str | None = None
 
     # Correction status (§15.7) and delivery outcome (§18.3).
     correction_status: str = "none"
     delivery_state: SegmentDeliveryState = SegmentDeliveryState.NOT_DELIVERED
-    superseded_by: Optional[str] = None
+    superseded_by: str | None = None
 
     @property
     def is_public(self) -> bool:
@@ -71,7 +73,7 @@ class TranscriptEntry:
         return self.delivered and self.delivery_state is not (
             SegmentDeliveryState.NOT_DELIVERED)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "segment_id": self.segment_id,
@@ -105,12 +107,12 @@ class TranscriptService:
     """
 
     def __init__(self):
-        self._entries: List[TranscriptEntry] = []
+        self._entries: list[TranscriptEntry] = []
 
     def record_generated(
         self, segment: Segment, script: BroadcastScript,
         segment_title: str = "",
-    ) -> List[TranscriptEntry]:
+    ) -> list[TranscriptEntry]:
         """Record a generated script. Not delivered — not in the public
         transcript until the segment plays (§18.3)."""
         entries = []
@@ -135,26 +137,26 @@ class TranscriptService:
         return entries
 
     def mark_delivered(self, segment_id: str,
-                       started_at: Optional[datetime] = None) -> int:
+                       started_at: datetime | None = None) -> int:
         """The segment began playing: its turns become delivered text."""
         count = 0
         for entry in self._entries:
             if entry.segment_id == segment_id and not entry.delivered:
                 entry.delivered = True
                 entry.content_state = ContentState.DELIVERED.value
-                entry.started_at = started_at or datetime.now(timezone.utc)
+                entry.started_at = started_at or datetime.now(UTC)
                 entry.delivery_state = SegmentDeliveryState.COMPLETED
                 count += 1
         return count
 
     def mark_interrupted(self, segment_id: str,
-                         completed_at: Optional[datetime] = None) -> int:
+                         completed_at: datetime | None = None) -> int:
         """§18.3: an interrupted segment is marked, not completed."""
         count = 0
         for entry in self._entries:
             if entry.segment_id == segment_id:
                 entry.delivery_state = SegmentDeliveryState.INTERRUPTED
-                entry.completed_at = completed_at or datetime.now(timezone.utc)
+                entry.completed_at = completed_at or datetime.now(UTC)
                 count += 1
         return count
 
@@ -167,12 +169,12 @@ class TranscriptService:
         return count
 
     def mark_completed(self, segment_id: str,
-                       completed_at: Optional[datetime] = None) -> int:
+                       completed_at: datetime | None = None) -> int:
         count = 0
         for entry in self._entries:
             if entry.segment_id == segment_id:
                 entry.delivery_state = SegmentDeliveryState.COMPLETED
-                entry.completed_at = completed_at or datetime.now(timezone.utc)
+                entry.completed_at = completed_at or datetime.now(UTC)
                 count += 1
         return count
 
@@ -187,14 +189,14 @@ class TranscriptService:
                 count += 1
         return count
 
-    def public_transcript(self, limit: int = 100) -> List[TranscriptEntry]:
+    def public_transcript(self, limit: int = 100) -> list[TranscriptEntry]:
         """§18.3: only delivered, non-abandoned text."""
         public = [e for e in self._entries if e.is_public]
         return public[-limit:]
 
-    def full_transcript(self, limit: int = 200) -> List[TranscriptEntry]:
+    def full_transcript(self, limit: int = 200) -> list[TranscriptEntry]:
         """Including generated-but-undelivered, for operator inspection."""
         return self._entries[-limit:]
 
-    def entries_for_segment(self, segment_id: str) -> List[TranscriptEntry]:
+    def entries_for_segment(self, segment_id: str) -> list[TranscriptEntry]:
         return [e for e in self._entries if e.segment_id == segment_id]

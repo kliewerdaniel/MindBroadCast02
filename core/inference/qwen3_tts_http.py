@@ -15,11 +15,13 @@ import hashlib
 import json
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..broadcast.providers import (
-    ProviderCapabilities, ProviderUnavailable, SynthesisRequest,
-    SynthesisResult, TTSProvider,
+    ProviderCapabilities,
+    ProviderUnavailable,
+    SynthesisRequest,
+    SynthesisResult,
 )
 from .qwen3_tts import _wav_to_pcm_s16le
 
@@ -58,8 +60,8 @@ class Qwen3TTSHttpProvider:
 
     def _synthesize_blocking(self, text: str, ref_audio, ref_text,
                              speed: float = 1.0,
-                             instruct: Optional[str] = None) -> bytes:
-        payload: Dict[str, Any] = {"text": text, "speed": speed}
+                             instruct: str | None = None) -> bytes:
+        payload: dict[str, Any] = {"text": text, "speed": speed}
         if instruct:
             payload["instruct"] = instruct
         if ref_audio:
@@ -75,7 +77,7 @@ class Qwen3TTSHttpProvider:
                 return resp.read()
         except urllib.error.URLError as error:
             raise ProviderUnavailable(
-                f"qwen3-tts server unreachable at {self.base_url}: {error}")
+                f"qwen3-tts server unreachable at {self.base_url}: {error}") from None
 
     async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
         loop = asyncio.get_event_loop()

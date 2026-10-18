@@ -13,9 +13,13 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set
 from urllib.parse import (
-    urlparse, urlunparse, parse_qsl, urlencode, unquote, quote,
+    parse_qsl,
+    quote,
+    unquote,
+    urlencode,
+    urlparse,
+    urlunparse,
 )
 
 
@@ -34,7 +38,7 @@ class Rule(Enum):
 
 # Well-known tracking and analytics parameters. Removing these is safe because
 # they carry no content identity.
-TRACKING_PARAMS: Set[str] = {
+TRACKING_PARAMS: set[str] = {
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "utm_id", "utm_name", "utm_cid", "utm_reader", "utm_brand",
     "gclid", "gclsrc", "dclid", "fbclid", "msclkid", "twclid", "igshid",
@@ -59,7 +63,7 @@ class CanonicalizationPolicy:
     sort_query: bool = True
     remove_trailing_slash: bool = False
     collapse_path: bool = True
-    keep_params: Set[str] = field(default_factory=set)
+    keep_params: set[str] = field(default_factory=set)
 
 
 DEFAULT_POLICY = CanonicalizationPolicy()
@@ -70,10 +74,10 @@ class CanonicalizationResult:
     canonical_url: str
     original_url: str
     final_url: str
-    rules_applied: List[Rule] = field(default_factory=list)
-    redirect_chain: List[str] = field(default_factory=list)
+    rules_applied: list[Rule] = field(default_factory=list)
+    redirect_chain: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "canonical_url": self.canonical_url,
             "original_url": self.original_url,
@@ -85,9 +89,9 @@ class CanonicalizationResult:
 
 def canonicalize_url(
     url: str,
-    policy: Optional[CanonicalizationPolicy] = None,
-    final_url: Optional[str] = None,
-    redirect_chain: Optional[List[str]] = None,
+    policy: CanonicalizationPolicy | None = None,
+    final_url: str | None = None,
+    redirect_chain: list[str] | None = None,
 ) -> CanonicalizationResult:
     """Canonicalize a URL, recording every rule applied.
 
@@ -95,7 +99,7 @@ def canonicalize_url(
     path variations, and optionally follows the publisher's own canonical hint.
     """
     policy = policy or DEFAULT_POLICY
-    rules: List[Rule] = []
+    rules: list[Rule] = []
     original = url
 
     parsed = urlparse(url)
@@ -186,7 +190,7 @@ def _collapse_path(path: str) -> str:
         return path
     trailing = "/" if path.endswith("/") and len(path) > 1 else ""
     segments = [s for s in path.split("/") if s not in ("", ".")]
-    resolved: List[str] = []
+    resolved: list[str] = []
     for segment in segments:
         if segment == "..":
             if resolved:
@@ -221,7 +225,7 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-def shingles(text: str, size: int = 5) -> Set[str]:
+def shingles(text: str, size: int = 5) -> set[str]:
     """Word-level shingles for near-duplicate comparison."""
     words = normalize_text(text).split()
     if len(words) < size:
@@ -231,7 +235,7 @@ def shingles(text: str, size: int = 5) -> Set[str]:
     }
 
 
-def jaccard(a: Set[str], b: Set[str]) -> float:
+def jaccard(a: set[str], b: set[str]) -> float:
     """Jaccard similarity. Symmetric by construction."""
     if not a and not b:
         return 1.0

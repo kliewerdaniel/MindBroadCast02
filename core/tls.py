@@ -26,12 +26,10 @@ why the entry points call it at the very top.
 
 import os
 import ssl
-import sys
 from pathlib import Path
-from typing import Optional
 
 
-def ca_bundle_path() -> Optional[Path]:
+def ca_bundle_path() -> Path | None:
     """The CA bundle to trust, or None if none can be found.
 
     Prefers certifi (shipped with the build). Falls back to the platform's
@@ -57,7 +55,7 @@ def ca_bundle_path() -> Optional[Path]:
     return None
 
 
-def install_ca_bundle() -> Optional[Path]:
+def install_ca_bundle() -> Path | None:
     """Point OpenSSL at a real CA bundle. Idempotent; safe to call anywhere.
 
     Returns the bundle in use, or None when nothing was found — in which case

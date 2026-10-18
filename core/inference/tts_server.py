@@ -1,3 +1,4 @@
+    import logging
 """A persistent local Qwen3-TTS HTTP server.
 
 Loads the Qwen3-TTS MLX model ONCE and serves synthesis over HTTP, so the
@@ -5,7 +6,8 @@ audio path pays the model-load cost a single time instead of once per call.
 This is the fix for the per-call subprocess reload that made the first real-TTS
 integration too slow for continuous broadcasting.
 
-Run with a Python that has a working mlx_audio (3.10+; verified on 3.14):
+Run with a Python that has a working mlx_audio (3.10+
+verified on 3.14):
 
     /opt/homebrew/bin/python3.14 -m core.inference.tts_server --port 7861
 
@@ -14,7 +16,8 @@ Endpoints:
     POST /synthesize       -> 24kHz mono s16le WAV bytes
 
 The server holds the model in-process across requests. It is MindBroadcast's
-own audio path, independent of the user's vox server on :7860; both sit behind
+own audio path, independent of the user's vox server on :7860
+both sit behind
 the same TTSProvider protocol, so either can back the runtime.
 
 Localhost-only: it binds 127.0.0.1 and refuses a non-local host.
@@ -22,9 +25,6 @@ Localhost-only: it binds 127.0.0.1 and refuses a non-local host.
 
 import argparse
 import io
-import json
-import os
-import sys
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -33,7 +33,8 @@ warnings.filterwarnings("ignore")
 def _refuse_non_local(host: str) -> None:
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise SystemExit(
-            f"refusing to bind non-local host {host!r}; this server is "
+            f"refusing to bind non-local host {host!r}
+            this server is "
             f"localhost-only by design")
 
 
@@ -43,9 +44,9 @@ def _load_model(model_id: str):
 
 
 def build_app(model_id: str):
-    from flask import Flask, request, Response
     import numpy as np
     import soundfile as sf
+    from flask import Flask, Response, request
 
     app = Flask(__name__)
     state = {"model": None, "model_id": model_id}
@@ -111,7 +112,7 @@ def main(argv=None):
 
     _refuse_non_local(args.host)
     app = build_app(args.model)
-    import logging; logging.getLogger(__name__).info(
+    logging.getLogger(__name__).info(
         f"Qwen3-TTS server on http://{args.host}:{args.port} "
         f"model={args.model}")
     app.run(host=args.host, port=args.port, threaded=False)

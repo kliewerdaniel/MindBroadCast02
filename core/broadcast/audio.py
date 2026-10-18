@@ -13,12 +13,14 @@ system has already abandoned.
 """
 
 from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from .entities import (
-    AudioArtifact, AudioChunk, Segment, SegmentStatus,
+    AudioArtifact,
+    AudioChunk,
+    Segment,
 )
 
 
@@ -59,10 +61,10 @@ class AudioBuffer:
         self.max_bytes = max_bytes
         self.max_chunks_per_segment = max_chunks_per_segment
         self.max_segments = max_segments
-        self._buffers: Dict[str, Deque[AudioChunk]] = {}
+        self._buffers: dict[str, deque[AudioChunk]] = {}
         self._dropped = 0
         self._rejected = 0
-        self._order: List[str] = []
+        self._order: list[str] = []
 
     # ── §16.6 inspection ──────────────────────────────────────────────
 
@@ -80,7 +82,7 @@ class AudioBuffer:
             rejected=self._rejected,
         )
 
-    def inspect(self, segment_id: str) -> List[Dict[str, Any]]:
+    def inspect(self, segment_id: str) -> list[dict[str, Any]]:
         """§16.6 queue inspection."""
         return [
             {
@@ -147,7 +149,7 @@ class AudioBuffer:
             return False
         return stats.bytes >= self.max_bytes * threshold
 
-    def take_chunk(self, segment_id: str) -> Optional[AudioChunk]:
+    def take_chunk(self, segment_id: str) -> AudioChunk | None:
         """Remove and return the next chunk for a segment."""
         buffer = self._buffers.get(segment_id)
         if not buffer:
@@ -188,7 +190,7 @@ class AudioBuffer:
 # ── §16.4 Chunking ───────────────────────────────────────────────────
 
 
-def chunk_text(text: str, max_chars: int = 240) -> List[str]:
+def chunk_text(text: str, max_chars: int = 240) -> list[str]:
     """§16.4 step 2. Divide text into synthesis units.
 
     Splitting happens on sentence boundaries where possible. §16.4 warns
@@ -200,7 +202,7 @@ def chunk_text(text: str, max_chars: int = 240) -> List[str]:
         return []
 
     sentences = _split_sentences(text)
-    chunks: List[str] = []
+    chunks: list[str] = []
     current = ""
 
     for sentence in sentences:
@@ -221,7 +223,7 @@ def chunk_text(text: str, max_chars: int = 240) -> List[str]:
     return chunks
 
 
-def _split_sentences(text: str) -> List[str]:
+def _split_sentences(text: str) -> list[str]:
     import re
     parts = re.split(r"(?<=[.!?])\s+", text.strip())
     return [p.strip() for p in parts if p.strip()]
@@ -286,28 +288,28 @@ class ArtifactStore:
     provenance can outlive large audio files when storage limits require it.
     """
 
-    def __init__(self, default_retention_days: Optional[int] = 30,
+    def __init__(self, default_retention_days: int | None = 30,
                  retain_audio: bool = True):
         self.default_retention_days = default_retention_days
         self.retain_audio = retain_audio
-        self._artifacts: Dict[str, AudioArtifact] = {}
+        self._artifacts: dict[str, AudioArtifact] = {}
 
     def store(self, artifact: AudioArtifact,
-              now: Optional[datetime] = None) -> str:
+              now: datetime | None = None) -> str:
         if not self.retain_audio:
             # Transcript and provenance are retained even when audio is not.
             artifact.storage_path = ""
             artifact.audio_format = "transcript_only"
         if self.default_retention_days is not None:
-            base = now or datetime.now(timezone.utc)
+            base = now or datetime.now(UTC)
             artifact.expires_at = base.replace(
                 microsecond=0)
         self._artifacts[artifact.id] = artifact
         return artifact.id
 
-    def get(self, artifact_id: str) -> Optional[AudioArtifact]:
+    def get(self, artifact_id: str) -> AudioArtifact | None:
         return self._artifacts.get(artifact_id)
 
-    def list_for_segment(self, segment_id: str) -> List[AudioArtifact]:
+    def list_for_segment(self, segment_id: str) -> list[AudioArtifact]:
         return [a for a in self._artifacts.values()
                 if a.segment_id == segment_id]

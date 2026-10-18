@@ -9,41 +9,64 @@ fabricated novelty, no autonomous weakening of validation, no duplicate segments
 after a crash, no sensitive content in logs, and no single opaque quality score.
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 
-from core.reliability.metrics import (
-    HealthState, Metric, MetricsRegistry, Subsystem,
-)
 from core.broadcast.entities import SegmentStatus
+from core.reliability.cache import (
+    AudioCache,
+    AudioCacheKey,
+    EntityResolutionCache,
+    SummaryCache,
+)
 from core.reliability.health import (
-    Capability, HealthService, LogRecord, ReadinessReport, RedactingFormatter,
+    Capability,
+    HealthService,
+    LogRecord,
+    ReadinessReport,
+    RedactingFormatter,
     StructuredLogger,
 )
-from core.reliability.scheduler import (
-    BackpressurePolicy, Priority, PriorityScheduler, QueueFull, Task,
-)
-from core.reliability.cache import (
-    AudioCache, AudioCacheKey, EntityResolutionCache, SummaryCache,
-)
-from core.reliability.recovery import (
-    CrashRecoveryHarness, LongDurationSimulator, RecoveryLedger, ResourceCeiling,
-)
-from core.reliability.routing import (
-    ContinuousOperationPolicy, ResourceAwareRouter, ResourceState, RouteChoice,
-    SegmentNature,
-)
 from core.reliability.improvement import (
-    ADJUSTABLE_PARAMETERS, ImprovementEvaluator, ImprovementProposal,
-    ImprovementState, PROTECTED_PARAMETERS, QualityAssessment,
+    ADJUSTABLE_PARAMETERS,
+    PROTECTED_PARAMETERS,
+    ImprovementEvaluator,
+    ImprovementProposal,
+    ImprovementState,
+    QualityAssessment,
     RecursiveImprovementEngine,
 )
+from core.reliability.metrics import (
+    HealthState,
+    MetricsRegistry,
+    Subsystem,
+)
+from core.reliability.recovery import (
+    CrashRecoveryHarness,
+    LongDurationSimulator,
+    RecoveryLedger,
+    ResourceCeiling,
+)
+from core.reliability.routing import (
+    ContinuousOperationPolicy,
+    ResourceAwareRouter,
+    ResourceState,
+    RouteChoice,
+    SegmentNature,
+)
+from core.reliability.scheduler import (
+    BackpressurePolicy,
+    Priority,
+    PriorityScheduler,
+    Task,
+)
 from core.reliability.streaming import (
-    HttpChunkedTransport, IcecastTransport, MetadataTransport, StreamManager,
+    HttpChunkedTransport,
+    IcecastTransport,
+    StreamManager,
     TransportKind,
 )
 
-NOW = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 3, 20, 12, 0, tzinfo=UTC)
 
 
 # ── §21.2 Metrics ────────────────────────────────────────────────────
@@ -471,7 +494,9 @@ class TestCrashRecovery:
 
     def test_ledger_round_trips(self):
         ledger = RecoveryLedger()
-        ledger.begin("t1"); ledger.commit("t1"); ledger.begin("t2")
+        ledger.begin("t1")
+        ledger.commit("t1")
+        ledger.begin("t2")
         restored = RecoveryLedger.from_dict(ledger.to_dict())
         assert restored.was_committed("t1")
         assert "t2" in restored.pending()
@@ -535,7 +560,7 @@ class TestLongDuration:
         assert not result.ceiling_violations
 
     def test_within_bounds_when_clean(self):
-        result = type("R", (), {
+        type("R", (), {
             "ceiling_violations": [], "duplicate_segments": 0})()
         from core.reliability.recovery import LongRunResult
         clean = LongRunResult(cycles=10)
@@ -815,7 +840,8 @@ class TestStreamingBoundary:
 class TestDefinitionOfDone:
     def test_information_integrity_checks_exist(self):
         """§30: every captured article has provenance; corrections do not
-        erase history; snapshots have temporal semantics."""
+        erase history
+        snapshots have temporal semantics."""
         # Persistence append-only triggers (Phase 1) and snapshot watermarks.
         from core.persistence import SCHEMA_VERSION
         assert SCHEMA_VERSION >= 2

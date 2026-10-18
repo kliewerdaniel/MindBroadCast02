@@ -26,12 +26,9 @@ contradiction from a definitional difference (§8.2, invariant I10).
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
 
 from ..models import ClaimType
 from .structural import NormalizedDocument, Sentence
-
 
 # Reporting verbs that signal attribution. Ordered longest-first so
 # "according to" wins over a bare "to".
@@ -112,7 +109,7 @@ _CAUSAL = re.compile(
 @dataclass
 class Quantity:
     value: str
-    unit: Optional[str]
+    unit: str | None
     start: int
     end: int
 
@@ -133,10 +130,10 @@ class ExtractedClaim:
     start: int
     end: int
     sentence_index: int
-    attributed_to: Optional[str] = None
-    reporting_verb: Optional[str] = None
-    quantities: List[Quantity] = field(default_factory=list)
-    temporal_qualifiers: List[TemporalQualifier] = field(default_factory=list)
+    attributed_to: str | None = None
+    reporting_verb: str | None = None
+    quantities: list[Quantity] = field(default_factory=list)
+    temporal_qualifiers: list[TemporalQualifier] = field(default_factory=list)
     is_causal: bool = False
     extraction_method: str = "syntactic_classifier"
     extraction_version: str = "1.0.0"
@@ -150,10 +147,10 @@ class ExtractedClaim:
 @dataclass
 class ClaimExtractionResult:
     article_id: str
-    claims: List[ExtractedClaim] = field(default_factory=list)
+    claims: list[ExtractedClaim] = field(default_factory=list)
     pass_name: str = "claim_extraction"
     pass_version: str = "1.0.0"
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class ClaimExtractor:
@@ -177,7 +174,7 @@ class ClaimExtractor:
 
     def _extract_from_sentence(
         self, sentence: Sentence, document: NormalizedDocument
-    ) -> Optional[ExtractedClaim]:
+    ) -> ExtractedClaim | None:
         text = sentence.text
         if not self._is_propositional(text):
             return None
@@ -256,14 +253,12 @@ class ClaimExtractor:
             return False
         # A bare quotation with no reporting verb is a speech act, not a
         # proposition the article asserts.
-        if stripped.startswith('"') and not _VERB_PATTERN.search(stripped):
-            return False
-        return True
+        return not (stripped.startswith('"') and not _VERB_PATTERN.search(stripped))
 
     # ── attribution ──────────────────────────────────────
 
-    def _find_attribution(self, text: str) -> Tuple[Optional[str],
-                                                    Optional[str]]:
+    def _find_attribution(self, text: str) -> tuple[str | None,
+                                                    str | None]:
         match = _ATTRIBUTED_SUBJECT.search(text)
         if match:
             subject = match.group(1).strip()
@@ -279,8 +274,8 @@ class ClaimExtractor:
 
     # ── quantities and qualifiers ────────────────────────
 
-    def _find_quantities(self, text: str, offset: int) -> List[Quantity]:
-        found: List[Quantity] = []
+    def _find_quantities(self, text: str, offset: int) -> list[Quantity]:
+        found: list[Quantity] = []
         for match in _NUMBER.finditer(text):
             found.append(Quantity(
                 value=match.group("value"),
@@ -292,8 +287,8 @@ class ClaimExtractor:
         return found
 
     def _find_temporals(self, text: str,
-                        offset: int) -> List[TemporalQualifier]:
-        found: List[TemporalQualifier] = []
+                        offset: int) -> list[TemporalQualifier]:
+        found: list[TemporalQualifier] = []
         for match in _TEMPORAL.finditer(text):
             found.append(TemporalQualifier(
                 phrase=match.group("phrase").strip(),

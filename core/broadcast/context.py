@@ -15,17 +15,22 @@ prompt wording alone."
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
 from .entities import (
-    BroadcastScript, EvidencePacket, GenerationAttempt, GenerationRequest,
-    ScriptTurn, SpeechAct,
+    BroadcastScript,
+    EvidencePacket,
+    GenerationAttempt,
+    GenerationRequest,
+    ScriptTurn,
+    SpeechAct,
 )
 from .providers import (
-    GenerationResult, LanguageModelProvider, ProviderError, StubLanguageModelProvider,
+    GenerationResult,
+    LanguageModelProvider,
+    ProviderError,
 )
-
 
 # ── §14.4 Context assembly ───────────────────────────────────────────
 
@@ -42,13 +47,13 @@ class ContextBuilder:
     def build(
         self,
         segment_objective: str,
-        supporting_claims: Optional[List[Any]] = None,
-        contradicting_claims: Optional[List[Any]] = None,
-        evidence_records: Optional[List[Any]] = None,
-        historical_context: Optional[List[Any]] = None,
-        previously_broadcast: Optional[List[Any]] = None,
-        unresolved_questions: Optional[List[str]] = None,
-        required_disclaimers: Optional[List[str]] = None,
+        supporting_claims: list[Any] | None = None,
+        contradicting_claims: list[Any] | None = None,
+        evidence_records: list[Any] | None = None,
+        historical_context: list[Any] | None = None,
+        previously_broadcast: list[Any] | None = None,
+        unresolved_questions: list[str] | None = None,
+        required_disclaimers: list[str] | None = None,
         world_snapshot_id: str = "",
     ) -> EvidencePacket:
         """Assemble the packet.
@@ -149,14 +154,14 @@ class UntrustedContentGuard:
     explicit that no single technique is sufficient (§15.6 says the same).
     """
 
-    def __init__(self, known_record_ids: Optional[set] = None):
+    def __init__(self, known_record_ids: set | None = None):
         self.known_record_ids = known_record_ids or set()
 
     def wrap_source_data(self, text: str) -> str:
         """Enclose untrusted content in data delimiters."""
         return f"{DATA_BLOCK_OPEN}\n{text}\n{DATA_BLOCK_CLOSE}"
 
-    def scan(self, text: str, field_name: str = "source") -> List[InjectionFinding]:
+    def scan(self, text: str, field_name: str = "source") -> list[InjectionFinding]:
         lowered = text.lower()
         findings = []
         for pattern in INJECTION_PATTERNS:
@@ -181,10 +186,11 @@ class UntrustedContentGuard:
             return False
         return record_id in self.known_record_ids
 
-    def sanitize_context(self, context: Dict[str, Any]) -> Tuple[Dict[str, Any], List[InjectionFinding]]:
+    def sanitize_context(self, context: dict[str, Any]) -> tuple[dict[str, Any],
+        ist[InjectionFinding]]:
         """Return a context dict with untrusted fields wrapped, plus findings."""
         sanitized = dict(context)
-        findings: List[InjectionFinding] = []
+        findings: list[InjectionFinding] = []
         for key in ("source_text", "article_text", "listener_message"):
             value = context.get(key)
             if isinstance(value, str):
@@ -198,9 +204,9 @@ class UntrustedContentGuard:
 
 @dataclass
 class GenerationOutcome:
-    request: Optional[GenerationRequest] = None
-    attempts: List[GenerationAttempt] = field(default_factory=list)
-    script: Optional[BroadcastScript] = None
+    request: GenerationRequest | None = None
+    attempts: list[GenerationAttempt] = field(default_factory=list)
+    script: BroadcastScript | None = None
     succeeded: bool = False
     blocked_reason: str = ""
 
@@ -216,7 +222,7 @@ class GenerationOrchestrator:
     def __init__(
         self,
         provider: LanguageModelProvider,
-        guard: Optional[UntrustedContentGuard] = None,
+        guard: UntrustedContentGuard | None = None,
         prompt_version: str = "script_v1",
         output_schema_version: str = "broadcast_script_v1",
         policy_id: str = "local_default",
@@ -228,8 +234,8 @@ class GenerationOrchestrator:
         self.policy_id = policy_id
         # request_idempotency_key -> script, so a retry reuses the result
         # rather than creating a duplicate active segment (§14.6).
-        self._idempotency: Dict[str, BroadcastScript] = {}
-        self.semantic_failure_counts: Dict[str, int] = {}
+        self._idempotency: dict[str, BroadcastScript] = {}
+        self.semantic_failure_counts: dict[str, int] = {}
 
     def make_request(
         self,
@@ -238,10 +244,10 @@ class GenerationOrchestrator:
         evidence_packet: EvidencePacket,
         persona_id: str = "",
         persona_configuration_version: str = "",
-        input_record_ids: Optional[List[str]] = None,
+        input_record_ids: list[str] | None = None,
         maximum_output_tokens: int = 2048,
         max_attempts: int = 2,
-        deadline: Optional[datetime] = None,
+        deadline: datetime | None = None,
     ) -> GenerationRequest:
         digest = hashlib.sha256(
             "|".join([
@@ -269,8 +275,8 @@ class GenerationOrchestrator:
         self,
         request: GenerationRequest,
         objective: str = "",
-        schema: Optional[Dict[str, Any]] = None,
-        untrusted_sources: Optional[List[str]] = None,
+        schema: dict[str, Any] | None = None,
+        untrusted_sources: list[str] | None = None,
     ) -> GenerationOutcome:
         """Run the request with bounded retries. Records every attempt (§14.6)."""
         outcome = GenerationOutcome(request=request)
@@ -286,7 +292,7 @@ class GenerationOrchestrator:
             return outcome
 
         # §14.5: untrusted content is wrapped and scanned.
-        sanitized_sources: List[str] = []
+        sanitized_sources: list[str] = []
         for index, source in enumerate(untrusted_sources or []):
             findings = self.guard.scan(source, field_name=f"source[{index}]")
             if findings:
@@ -324,10 +330,10 @@ class GenerationOrchestrator:
             except ProviderError as error:
                 attempt.failure_classification = type(error).__name__
                 attempt.disposition = "failed"
-                attempt.completed_at = datetime.now(timezone.utc)
+                attempt.completed_at = datetime.now(UTC)
                 continue
 
-            attempt.completed_at = datetime.now(timezone.utc)
+            attempt.completed_at = datetime.now(UTC)
             attempt.latency_ms = result.latency_ms
             attempt.token_usage = result.token_usage
 
@@ -355,7 +361,7 @@ class GenerationOrchestrator:
 
     def _to_script(
         self, request: GenerationRequest, result: GenerationResult
-    ) -> Optional[BroadcastScript]:
+    ) -> BroadcastScript | None:
         """Convert provider output into a script.
 
         A result with no usable structured content is a semantic failure, not

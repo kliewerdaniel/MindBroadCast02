@@ -35,7 +35,7 @@ def test_chris_clip_exists_and_is_a_real_recording():
 
 
 def test_voice_resolves_to_the_clip_in_source_mode():
-    from core.inference.voices import VoiceRegistry, _CHRIS_CLIP
+    from core.inference.voices import _CHRIS_CLIP, VoiceRegistry
     assert os.path.isfile(_CHRIS_CLIP), _CHRIS_CLIP
     assert VoiceRegistry().chris_clip_path() == _CHRIS_CLIP
     assert VoiceRegistry().all_use_chris_voice(
@@ -66,7 +66,7 @@ def test_frozen_voice_never_resolves_into_the_extraction_dir(monkeypatch):
         # And a real clip wins over the temp dir when one exists.
         home_clip = Path(candidates[0]) / "chris.wav"
         if home_clip.is_file():
-            assert voices._CHRIS_CLIP == str(home_clip)
+            assert str(home_clip) == voices._CHRIS_CLIP
     finally:
         monkeypatch.undo()
         importlib.reload(sys.modules["core.inference.voices"])

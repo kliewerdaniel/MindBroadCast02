@@ -20,13 +20,25 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime
-from typing import Dict, Optional
 
 from .models import (
-    Source, SourceType, Article, Event, Story, Correction,
-    Entity, EntityType, Claim, ClaimType, ClaimStatus, claim_status_from_str,
-    Evidence, EvidenceRelationship, CorrectionType, EventStatus,
+    Article,
+    Claim,
+    ClaimStatus,
+    ClaimType,
+    Correction,
+    CorrectionType,
+    Entity,
+    EntityType,
+    Event,
+    EventStatus,
+    Evidence,
+    EvidenceRelationship,
     ExtractionStatus,
+    Source,
+    SourceType,
+    Story,
+    claim_status_from_str,
 )
 
 
@@ -40,7 +52,7 @@ def is_legacy_database(conn: sqlite3.Connection) -> bool:
     return "events" in tables and "articles" not in tables
 
 
-def import_legacy_schema(store, legacy_conn: sqlite3.Connection) -> Dict[str, int]:
+def import_legacy_schema(store, legacy_conn: sqlite3.Connection) -> dict[str, int]:
     """Import legacy rows into a Phase 1 WorldStore.
 
     Returns counts of imported records. `store` must already be migrated.
@@ -58,14 +70,14 @@ def import_legacy_schema(store, legacy_conn: sqlite3.Connection) -> Dict[str, in
         loop.close()
 
 
-async def _import_async(store, legacy_conn: sqlite3.Connection) -> Dict[str, int]:
+async def _import_async(store, legacy_conn: sqlite3.Connection) -> dict[str, int]:
     legacy_conn.row_factory = sqlite3.Row
     counts = {
         "sources": 0, "articles": 0, "events": 0, "stories": 0,
         "claims": 0, "evidence": 0, "corrections": 0, "entities": 0,
     }
-    source_by_domain: Dict[str, str] = {}
-    claim_id_map: Dict[str, str] = {}
+    source_by_domain: dict[str, str] = {}
+    claim_id_map: dict[str, str] = {}
 
     # ── sources, synthesized from distinct domains ──────
     for url in _distinct_urls(legacy_conn):
@@ -210,14 +222,14 @@ def _distinct_urls(conn: sqlite3.Connection):
     ]
 
 
-def _domain_from_url(url: str) -> Optional[str]:
+def _domain_from_url(url: str) -> str | None:
     if not url:
         return None
     without_scheme = url.split("://", 1)[-1]
     return without_scheme.split("/", 1)[0] or None
 
 
-def _parse(value) -> Optional[datetime]:
+def _parse(value) -> datetime | None:
     if not value:
         return None
     if isinstance(value, datetime):

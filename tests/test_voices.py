@@ -10,7 +10,6 @@ import os
 
 from core.inference.runtime import LiveRuntime
 from core.inference.voices import (
-    DEFAULT_VOICES,
     VoiceProfile,
     VoiceRegistry,
     chris_voice,

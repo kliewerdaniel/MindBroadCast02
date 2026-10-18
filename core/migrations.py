@@ -10,12 +10,14 @@ the whole migration commits or the ledger is untouched.
 """
 
 import sqlite3
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from .persistence import (
-    Database, PersistenceError, SCHEMA_VERSION, _dt_to_str, _utcnow,
+    Database,
+    PersistenceError,
+    _dt_to_str,
+    _utcnow,
 )
 
 
@@ -24,7 +26,7 @@ class Migration:
     version: int
     name: str
     up: Callable[[sqlite3.Connection], None]
-    down: Optional[Callable[[sqlite3.Connection], None]] = None
+    down: Callable[[sqlite3.Connection], None] | None = None
     description: str = ""
 
 
@@ -45,7 +47,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 class MigrationRunner:
     """Applies and rolls back versioned migrations against a Database."""
 
-    def __init__(self, db: Database, migrations: Optional[List[Migration]] = None):
+    def __init__(self, db: Database, migrations: list[Migration] | None = None):
         self.db = db
         self.migrations = sorted(
             migrations if migrations is not None else default_migrations(),
@@ -60,7 +62,7 @@ class MigrationRunner:
         conn.executescript(LEDGER_DDL)
         conn.commit()
 
-    def applied_versions(self) -> List[int]:
+    def applied_versions(self) -> list[int]:
         conn = self.db.connect()
         rows = conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version ASC"
@@ -71,13 +73,13 @@ class MigrationRunner:
         applied = self.applied_versions()
         return applied[-1] if applied else 0
 
-    def pending(self) -> List[Migration]:
+    def pending(self) -> list[Migration]:
         applied = set(self.applied_versions())
         return [m for m in self.migrations if m.version not in applied]
 
     # ── apply / rollback ─────────────────────────────────
 
-    def migrate(self, target: Optional[int] = None) -> List[int]:
+    def migrate(self, target: int | None = None) -> list[int]:
         """Apply pending migrations up to `target` (default: all).
 
         Returns the versions applied, in order. Raises MigrationError on the
@@ -87,7 +89,7 @@ class MigrationRunner:
         if target is not None:
             pending = [m for m in pending if m.version <= target]
 
-        applied: List[int] = []
+        applied: list[int] = []
         for migration in pending:
             conn = self.db.connect()
             try:
@@ -111,13 +113,13 @@ class MigrationRunner:
                 ) from exc
         return applied
 
-    def rollback(self, target: int = 0) -> List[int]:
+    def rollback(self, target: int = 0) -> list[int]:
         """Roll back migrations newer than `target`, newest first."""
         applied = self.applied_versions()
         to_rollback = [v for v in reversed(applied) if v > target]
 
         by_version = {m.version: m for m in self.migrations}
-        rolled: List[int] = []
+        rolled: list[int] = []
         for version in to_rollback:
             migration = by_version.get(version)
             if migration is None:
@@ -141,7 +143,7 @@ class MigrationRunner:
                 ) from exc
         return rolled
 
-    def status(self) -> List[Dict[str, object]]:
+    def status(self) -> list[dict[str, object]]:
         """Human-readable migration status."""
         applied = set(self.applied_versions())
         return [
@@ -182,7 +184,7 @@ def _m001_down(conn: sqlite3.Connection) -> None:
         conn.execute(f"DROP TABLE IF EXISTS {table}")
 
 
-def default_migrations() -> List[Migration]:
+def default_migrations() -> list[Migration]:
     """The migrations that ship with the schema.
 
     The legacy import (spec C2) is registered separately via

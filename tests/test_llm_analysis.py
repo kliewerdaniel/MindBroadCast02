@@ -23,7 +23,6 @@ from core.personas.llm_analysis import (
 )
 from core.personas.memory import PersonaRegistry
 
-
 PACKET = SharedEvidencePacket(
     question="What does the appointment mean?",
     facts=[
@@ -205,7 +204,7 @@ def test_register_wires_registry_and_runner():
     registry = PersonaRegistry()
     runner = IndependentAnalysisRunner()
     ids = factory.register(registry, runner)
-    assert ids == [l.persona_id for l in DEFAULT_LENSES]
+    assert ids == [line.persona_id for line in DEFAULT_LENSES]
     # Personas resolvable by the orchestrator.
     for pid in ids:
         assert registry.get(pid) is not None
@@ -228,8 +227,8 @@ def test_distinct_lenses_yield_disagreement():
     registry = PersonaRegistry()
     runner = IndependentAnalysisRunner()
     factory.register(registry, runner)
-    personas = [p for p in (registry.get(l.persona_id)
-                            for l in DEFAULT_LENSES) if p is not None]
+    personas = [p for p in (registry.get(line.persona_id)
+                            for line in DEFAULT_LENSES) if p is not None]
     analyses = runner.run_first_passes(personas, PACKET)
 
     positions = {a.persona_id: a.position for a in analyses}
@@ -247,16 +246,16 @@ def test_first_passes_are_independent():
     # Each persona's prompt must carry only the shared packet, never another
     # persona's position — enforced by the runner's ordering, verified here by
     # the prompt contents.
-    per_lens = {l.name: {"position": "p", "assumptions": [],
-                         "confidence": 0.5} for l in DEFAULT_LENSES}
+    per_lens = {line.name: {"position": "p", "assumptions": [],
+                         "confidence": 0.5} for line in DEFAULT_LENSES}
     llm = FakeLLM(per_lens)
     factory = LLMAnalysisFactory(llm)
     registry = PersonaRegistry()
     runner = IndependentAnalysisRunner()
     factory.register(registry, runner)
     runner.run_first_passes(
-        [p for p in (registry.get(l.persona_id)
-                     for l in DEFAULT_LENSES) if p is not None], PACKET)
+        [p for p in (registry.get(line.persona_id)
+                     for line in DEFAULT_LENSES) if p is not None], PACKET)
     # No prompt leaked another persona's position text.
     for prompt in llm.prompts:
         assert "a deliberate consolidation" not in prompt

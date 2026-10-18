@@ -20,10 +20,11 @@ annoys or under-protects.
 carries a text/state field, never only a color.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 
 class ControlKind(Enum):
@@ -49,8 +50,8 @@ class AuditRecord:
     actor: str
     kind: ControlKind
     confirmed: bool
-    detail: Dict[str, Any] = field(default_factory=dict)
-    recorded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    detail: dict[str, Any] = field(default_factory=dict)
+    recorded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -58,8 +59,8 @@ class ControlResult:
     status: ControlStatus
     action: str
     message: str = ""
-    audit_id: Optional[str] = None
-    state: Dict[str, Any] = field(default_factory=dict)
+    audit_id: str | None = None
+    state: dict[str, Any] = field(default_factory=dict)
 
 
 class ConfirmationRequired(Exception):
@@ -71,7 +72,7 @@ class ConfirmationRequired(Exception):
 
 
 # The §18.6 control set, each classified.
-CONTROL_KINDS: Dict[str, ControlKind] = {
+CONTROL_KINDS: dict[str, ControlKind] = {
     "start_broadcast": ControlKind.OPERATIONAL,
     "stop_broadcast": ControlKind.OPERATIONAL,
     "pause_generation": ControlKind.IMMEDIATE,
@@ -92,18 +93,18 @@ class OperatorConsole:
     """Executes the §18.6 controls with confirmation and audit semantics."""
 
     def __init__(self):
-        self._audit: List[AuditRecord] = []
+        self._audit: list[AuditRecord] = []
         self._audit_counter = 0
-        self._state: Dict[str, Any] = {
+        self._state: dict[str, Any] = {
             "broadcast_running": False,
             "generation_paused": False,
             "muted": False,
             "operating_mode": "live",
         }
-        self._handlers: Dict[str, Callable[..., Dict[str, Any]]] = {}
+        self._handlers: dict[str, Callable[..., dict[str, Any]]] = {}
 
     def register_handler(self, action: str,
-                         handler: Callable[..., Dict[str, Any]]) -> None:
+                         handler: Callable[..., dict[str, Any]]) -> None:
         self._handlers[action] = handler
 
     def execute(self, action: str, actor: str = "operator",
@@ -147,7 +148,7 @@ class OperatorConsole:
             f"{action} executed", audit_id, dict(self._state))
 
     def _audit_action(self, action: str, actor: str, kind: ControlKind,
-                      confirmed: bool, detail: Dict[str, Any]) -> str:
+                      confirmed: bool, detail: dict[str, Any]) -> str:
         self._audit_counter += 1
         record = AuditRecord(
             id=f"audit-{self._audit_counter:06d}",
@@ -157,17 +158,17 @@ class OperatorConsole:
         self._audit.append(record)
         return record.id
 
-    def state(self) -> Dict[str, Any]:
+    def state(self) -> dict[str, Any]:
         """§18.7: state is text and explicit, never color-encoded."""
         return dict(self._state)
 
-    def audit_log(self, action: Optional[str] = None) -> List[AuditRecord]:
+    def audit_log(self, action: str | None = None) -> list[AuditRecord]:
         if action is None:
             return list(self._audit)
         return [a for a in self._audit if a.action == action]
 
-    def failed_tasks_view(self, failures: List[Dict[str, Any]]
-                          ) -> List[Dict[str, Any]]:
+    def failed_tasks_view(self, failures: list[dict[str, Any]]
+                          ) -> list[dict[str, Any]]:
         """§18.6: inspect failed tasks.
 
         §18.7: status carries a text field, so a renderer cannot rely on color.
@@ -202,7 +203,7 @@ class AccessibilityPreferences:
     respect_reduced_motion: bool = True
     audio_controls: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "keyboard_navigation": self.keyboard_navigation,
             "visible_focus_indicators": self.visible_focus_indicators,
@@ -215,7 +216,7 @@ class AccessibilityPreferences:
         }
 
 
-def status_is_not_color_encoded(status: Dict[str, Any]) -> bool:
+def status_is_not_color_encoded(status: dict[str, Any]) -> bool:
     """§18.7: "The visual design should not rely exclusively on color to
     communicate whether a segment is approved, disputed, or failed."
 

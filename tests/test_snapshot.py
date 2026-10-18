@@ -5,13 +5,20 @@ Gate 4 requirement: world snapshots preserve consistent historical state.
 
 import asyncio
 import os
+
 import pytest
 
 from core.models import (
-    Story, Claim, Evidence, Entity, Correction,
-    ClaimType, ClaimStatus, EntityType, CorrectionType,
+    Claim,
+    ClaimType,
+    Correction,
+    CorrectionType,
+    Entity,
+    EntityType,
+    Evidence,
+    Story,
 )
-from core.persistence import WorldStore, PersistenceError
+from core.persistence import PersistenceError, WorldStore
 from core.snapshot import SnapshotService
 
 
@@ -133,7 +140,7 @@ class TestSnapshotRetrieval:
         assert len(run(service.list_snapshots())) == 3
 
     def test_latest_snapshot(self, service):
-        snap1 = run(service.create_snapshot())
+        run(service.create_snapshot())
         snap2 = run(service.create_snapshot())
         latest = run(service.get_latest_snapshot())
         assert latest is not None

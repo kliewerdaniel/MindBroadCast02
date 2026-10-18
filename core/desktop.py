@@ -24,6 +24,7 @@ Design boundaries:
   started themselves are left running.
 """
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -31,7 +32,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Optional
+
 
 def _project_root() -> Path:
     """Where the app's data/ directory lives, and the cwd for spawned servers.
@@ -105,14 +106,14 @@ def _start_tts() -> subprocess.Popen:
     instead of starting a server. There we run the server in a thread instead
     (see ``_serve_in_thread``).
     """
-    log = open(_ROOT / "data" / "tts.log", "w")
+    with open(_ROOT / "data" / "tts.log", "w") as log:
     return subprocess.Popen(
         [sys.executable, "-m", "core.inference.tts_server",
          "--port", str(_TTS_PORT)],
         cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
-def _interpreter_with_mlx() -> Optional[str]:
+def _interpreter_with_mlx() -> str | None:
     """A Python that can actually run the Qwen3-TTS model, if one exists.
 
     A frozen release deliberately does not bundle the MLX/Qwen3-TTS stack (it
@@ -152,7 +153,7 @@ def _interpreter_with_mlx() -> Optional[str]:
     return None
 
 
-def _project_root_for(interpreter: str) -> Optional[str]:
+def _project_root_for(interpreter: str) -> str | None:
     """The directory that has the ``core`` package for this interpreter.
 
     A venv's python lives at ``<root>/.venv/bin/python``, so the project root
@@ -184,7 +185,7 @@ def _start_tts_external(interpreter: str) -> subprocess.Popen:
     dir, and puts it on PYTHONPATH as well, so the module is importable even
     if the working directory is ignored.
     """
-    log = open(_ROOT / "data" / "tts.log", "w")
+    with open(_ROOT / "data" / "tts.log", "w") as log:
     cwd = _project_root_for(interpreter) or str(_ROOT)
     env = dict(os.environ)
     existing = env.get("PYTHONPATH", "")
@@ -197,7 +198,7 @@ def _start_tts_external(interpreter: str) -> subprocess.Popen:
 
 def _start_console() -> subprocess.Popen:
     """Start the console with uvicorn, quiet (the window IS the output)."""
-    log = open(_ROOT / "data" / "console.log", "w")
+    with open(_ROOT / "data" / "console.log", "w") as log:
     return subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "core.inference.console:app",
          "--host", "127.0.0.1", "--port", str(_CONSOLE_PORT)],
@@ -216,10 +217,8 @@ def _serve_in_thread(target, *args, **kwargs) -> None:
         try:
             target(*args, **kwargs)
         except Exception as exc:  # a dead server must not kill the window
-            try:
+            with contextlib.suppress(OSError):
                 (_ROOT / "data" / "server-error.log").write_text(repr(exc))
-            except OSError:
-                pass
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -305,8 +304,9 @@ def _build_app() -> None:
     # 2. Console.
     if not _reachable(f"http://127.0.0.1:{_CONSOLE_PORT}/api/health"):
         if frozen:
-            from core.inference.console import app as _console_app
             import uvicorn as _uvicorn
+
+            from core.inference.console import app as _console_app
             _serve_in_thread(
                 _uvicorn.run, _console_app,
                 host="127.0.0.1", port=_CONSOLE_PORT, log_level="warning")
@@ -339,10 +339,8 @@ def _build_app() -> None:
     def _on_closed():
         # Stop only what we started; leave a user-started server alone.
         for proc in started:
-            try:
+            with contextlib.suppress(Exception):
                 proc.terminate()
-            except Exception:
-                pass
 
     if window is not None:
         window.events.closed += _on_closed

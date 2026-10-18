@@ -11,12 +11,17 @@ The two security properties enforced structurally here:
    input (§17.5). The listener endpoint enqueues; it cannot establish a claim.
 """
 
-from typing import Any, Dict, List, Optional
+from datetime import UTC
+from typing import Any
 
 from .contracts import (
-    ApiError, ApiResponse, ErrorCode, ClaimSummary, EvidenceSummary,
-    HealthStatus, SegmentSummary, SessionSummary, SourceSummary, StorySummary,
-    SystemStatus, validation_error,
+    ApiError,
+    ApiResponse,
+    ErrorCode,
+    HealthStatus,
+    SessionSummary,
+    SystemStatus,
+    validation_error,
 )
 from .events import EventStore, EventStream
 from .operator import OperatorConsole
@@ -27,10 +32,10 @@ from .transcript import TranscriptService
 
 def build_router(
     store: Any = None,
-    event_store: Optional[EventStore] = None,
-    transcript: Optional[TranscriptService] = None,
-    operator: Optional[OperatorConsole] = None,
-    show_analysis: Optional[ShowAnalysisBuilder] = None,
+    event_store: EventStore | None = None,
+    transcript: TranscriptService | None = None,
+    operator: OperatorConsole | None = None,
+    show_analysis: ShowAnalysisBuilder | None = None,
     message_pipeline: Any = None,
     world_explorer: Any = None,
 ) -> Router:
@@ -47,14 +52,14 @@ def build_router(
 
     # ── §19.2 health and status ──────────────────────────────────────
 
-    def health(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def health(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok(
             HealthStatus(status="ok",
                          checked_at=_now_iso(),
                          checks={"store": store is not None}).__dict__,
             request.request_id)
 
-    def system_status(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def system_status(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         status = SystemStatus(
             operating_mode=operator.state().get("operating_mode", "live"),
             health="ok" if store is not None else "degraded",
@@ -68,17 +73,17 @@ def build_router(
 
     # ── §19.2 broadcast ──────────────────────────────────────────────
 
-    def broadcast_start(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def broadcast_start(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         result = operator.execute("start_broadcast", confirmed=True)
         event_store.emit("broadcast.state_changed", {"running": True})
         return ApiResponse.ok(result.state, request.request_id)
 
-    def broadcast_stop(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def broadcast_stop(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         result = operator.execute("stop_broadcast", confirmed=True)
         event_store.emit("broadcast.state_changed", {"running": False})
         return ApiResponse.ok(result.state, request.request_id)
 
-    def broadcast_session(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def broadcast_session(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         if store is None:
             return ApiResponse.error(_unavailable(request.request_id))
         return ApiResponse.ok(
@@ -88,15 +93,15 @@ def build_router(
                 playback_state="idle",
             ).__dict__, request.request_id)
 
-    def broadcast_segments(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def broadcast_segments(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"segments": []}, request.request_id)
 
-    def broadcast_segment(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def broadcast_segment(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok(
             {"segment_id": params["id"], "status": "unknown"},
             request.request_id)
 
-    def broadcast_transcript(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def broadcast_transcript(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         limit = request.query_int("limit", 100)
         public = request.query.get("view", "public")
         entries = (transcript.public_transcript(limit) if public == "public"
@@ -106,38 +111,38 @@ def build_router(
 
     # ── §19.2 stories and claims ─────────────────────────────────────
 
-    def stories(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def stories(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         if store is None:
             return ApiResponse.error(_unavailable(request.request_id))
         return ApiResponse.ok({"stories": []}, request.request_id)
 
-    def story(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def story(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"story_id": params["id"]}, request.request_id)
 
-    def claim(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def claim(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"claim_id": params["id"]}, request.request_id)
 
-    def claim_evidence(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def claim_evidence(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"evidence": []}, request.request_id)
 
     # ── §19.2 sources (admin) ────────────────────────────────────────
 
-    def sources_list(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def sources_list(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"sources": []}, request.request_id)
 
-    def sources_register(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def sources_register(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         if not request.body or not isinstance(request.body, dict):
             return ApiResponse.error(validation_error(
                 "a source registration body is required", request_id=request.request_id))
         return ApiResponse.created({"registered": True}, request.request_id)
 
-    def source_update(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def source_update(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"source_id": params["id"], "updated": True},
                               request.request_id)
 
     # ── §19.2 listener messages ──────────────────────────────────────
 
-    def listener_submit(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def listener_submit(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         """§17.1: a durable input event. Never blocks, never establishes a claim."""
         if message_pipeline is None:
             return ApiResponse.error(_unavailable(request.request_id))
@@ -160,7 +165,7 @@ def build_router(
 
     # ── §19.2 events, snapshots, metrics ─────────────────────────────
 
-    def events(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def events(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         stream = EventStream(event_store)
         after = request.query.get("after")
         if after:
@@ -170,10 +175,10 @@ def build_router(
         return ApiResponse.ok(
             {"events": [e.to_dict() for e in batch]}, request.request_id)
 
-    def snapshot(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def snapshot(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({"snapshot_id": params["id"]}, request.request_id)
 
-    def metrics(request: ApiRequest, params: Dict[str, str]) -> ApiResponse:
+    def metrics(request: ApiRequest, params: dict[str, str]) -> ApiResponse:
         return ApiResponse.ok({
             "event_counts": _event_counts(event_store),
         }, request.request_id)
@@ -181,7 +186,7 @@ def build_router(
     # ── §18.4 SHOW ANALYSIS ──────────────────────────────────────────
 
     def show_analysis_endpoint(request: ApiRequest,
-                               params: Dict[str, str]) -> ApiResponse:
+                               params: dict[str, str]) -> ApiResponse:
         segment_id = params["id"]
         analysis = show_analysis.build(segment_id)
         return ApiResponse.ok(analysis.to_dict(), request.request_id)
@@ -239,8 +244,8 @@ def _prefixed(router: Router, prefix: str) -> Router:
 
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+    return datetime.now(UTC).isoformat()
 
 
 def _count(lister: Any) -> int:
@@ -252,15 +257,14 @@ def _count(lister: Any) -> int:
         return 0
 
 
-def _event_counts(event_store: EventStore) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def _event_counts(event_store: EventStore) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for event in event_store.replay_all(limit=10000):
         counts[event.type] = counts.get(event.type, 0) + 1
     return counts
 
 
 def _unavailable(request_id: str):
-    from .contracts import ApiError, ErrorCode
     return ApiError(ErrorCode.NOT_AVAILABLE,
                     "the world store is not available", request_id,
                     retryable=True)

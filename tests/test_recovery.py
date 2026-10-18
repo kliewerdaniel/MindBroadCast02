@@ -8,18 +8,24 @@ reliable") mean something beyond happy-path CRUD.
 """
 
 import asyncio
-import os
-import sqlite3
+
 import pytest
-from datetime import datetime, timezone
 
 from core.models import (
-    Story, Claim, Evidence, Entity, Source, Article, Correction,
-    SourceType, EntityType, ClaimType, ClaimStatus, CorrectionType,
-    StoryStatus, EvidenceRelationship,
+    Article,
+    Correction,
+    CorrectionType,
+    Evidence,
+    EvidenceRelationship,
+    Source,
+    Story,
+    StoryStatus,
 )
 from core.persistence import (
-    WorldStore, Database, PersistenceError, SCHEMA_VERSION,
+    SCHEMA_VERSION,
+    Database,
+    PersistenceError,
+    WorldStore,
 )
 
 

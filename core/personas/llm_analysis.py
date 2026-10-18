@@ -1,3 +1,4 @@
+            import logging
 """LLM-backed persona analysis: the missing hook in the §12.4 sequence.
 
 The persona machinery (IndependentAnalysisRunner, DisagreementDetector,
@@ -9,7 +10,8 @@ it asks the model for that persona's first-pass read of a story.
 The §12.3 boundary is enforced in the prompt and checked after: a persona may
 disagree about significance, mechanism, and implication, but must NOT
 independently decide whether a factual proposition is true. The shared facts
-are handed to every persona identically; the persona only shapes how it weighs
+are handed to every persona identically
+the persona only shapes how it weighs
 and connects them. The returned PersonaAnalysis records which facts it
 accepted (all of them) and the assumptions behind its position, so a later
 disagreement is attributable to a difference in reasoning, not evidence.
@@ -23,10 +25,10 @@ and real.
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..personas.entities import PersonaAnalysis, PersonaConfig
 from ..personas.analysis import SharedEvidencePacket
+from ..personas.entities import PersonaAnalysis, PersonaConfig
 
 
 @dataclass
@@ -41,14 +43,14 @@ class PersonaLens:
     name: str
     role: str = ""
     emphasis: str = ""                 # what this persona weighs most
-    questions: List[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)
     style: str = ""                    # vocabulary / tone
 
 
 # A small default newsroom: three distinct editorial lenses. These are the
 # substrate multi-persona broadcast runs on; each reads the same facts
 # differently, which is where real analytical value comes from.
-DEFAULT_LENSES: List[PersonaLens] = [
+DEFAULT_LENSES: list[PersonaLens] = [
     PersonaLens(
         persona_id="analyst",
         name="The Analyst",
@@ -78,7 +80,7 @@ DEFAULT_LENSES: List[PersonaLens] = [
 ]
 
 
-def _extract_json(text: str) -> Optional[Any]:
+def _extract_json(text: str) -> Any | None:
     if not text:
         return None
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
@@ -136,14 +138,14 @@ class LLMAnalysisFactory:
         return analyze
 
     def register(self, registry: Any, runner: Any,
-                 lenses: Optional[List[PersonaLens]] = None) -> List[str]:
+                 lenses: list[PersonaLens] | None = None) -> list[str]:
         """Register an analysis function per lens; return the persona ids.
 
         A PersonaConfig is registered in the registry so the orchestrator can
         resolve it, and the analysis function is registered on the runner.
         """
         lenses = lenses or DEFAULT_LENSES
-        ids: List[str] = []
+        ids: list[str] = []
         for lens in lenses:
             config = PersonaConfig(
                 id=lens.persona_id, name=lens.name, role=lens.role,
@@ -161,7 +163,8 @@ class LLMAnalysisFactory:
             f"You are {lens.name}, a {lens.role} on a news analysis desk.\n"
             f"Your analytical emphasis: {lens.emphasis}.\n"
             f"Speaking style: {lens.style}.\n\n"
-            f"Established facts about the story (accept these as given; do "
+            f"Established facts about the story (accept these as given
+            do "
             f"not re-decide whether they are true):\n{facts}\n\n"
             f"Give your first-pass read, weighing especially:\n{questions}\n\n"
             f"You may interpret significance, mechanism, and implication. Do "
@@ -188,7 +191,7 @@ class LLMAnalysisFactory:
         try:
             data = post("/api/generate", payload)
         except Exception as exc:
-            import logging; logging.getLogger(__name__).warning(
+            logging.getLogger(__name__).warning(
                 "LLM analysis request failed: %s", exc)
             return ""
         return (data.get("response", "")

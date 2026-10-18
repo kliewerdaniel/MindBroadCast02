@@ -17,9 +17,10 @@ time. An article published in January but first fetched in March was not
 available to the system in February.
 """
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -41,18 +42,18 @@ class LeakageViolation:
 @dataclass
 class ReplayWindow:
     as_of: datetime
-    records: List[Any] = field(default_factory=list)
-    violations: List[LeakageViolation] = field(default_factory=list)
+    records: list[Any] = field(default_factory=list)
+    violations: list[LeakageViolation] = field(default_factory=list)
 
     @property
     def is_clean(self) -> bool:
         return not self.violations
 
 
-def filter_as_of(
+def filter_as_of[T](
     records: Iterable[T],
     as_of: datetime,
-    observed_at: Callable[[T], Optional[datetime]],
+    observed_at: Callable[[T], datetime | None],
     record_id: Callable[[T], str] = lambda r: getattr(r, "id", str(r)),
     record_type: str = "record",
 ) -> ReplayWindow:
@@ -62,7 +63,7 @@ def filter_as_of(
     so a caller can assert the window is clean rather than trusting it.
     """
     if as_of.tzinfo is None:
-        as_of = as_of.replace(tzinfo=timezone.utc)
+        as_of = as_of.replace(tzinfo=UTC)
 
     window = ReplayWindow(as_of=as_of)
     for record in records:
@@ -79,7 +80,7 @@ def filter_as_of(
             ))
             continue
         if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
+            observed = observed.replace(tzinfo=UTC)
         if observed <= as_of:
             window.records.append(record)
         else:
@@ -102,9 +103,9 @@ def assert_no_leakage(window: ReplayWindow) -> None:
 
 
 def reconstruct_knowledge(
-    claims: List[Any],
+    claims: list[Any],
     as_of: datetime,
-) -> Dict[str, List[Any]]:
+) -> dict[str, list[Any]]:
     """What the system knew at `as_of`, split by epistemic status.
 
     §9.1's historical view: which claim assessments were active at that time.
@@ -114,7 +115,7 @@ def reconstruct_knowledge(
         observed_at=lambda c: getattr(c, "first_observed_at", None),
         record_type="claim",
     )
-    by_status: Dict[str, List[Any]] = {}
+    by_status: dict[str, list[Any]] = {}
     for claim in window.records:
         status = getattr(claim, "epistemic_status", "unknown")
         key = getattr(status, "value", str(status))
@@ -123,9 +124,9 @@ def reconstruct_knowledge(
 
 
 def development_timeline(
-    changes: List[Any],
-    as_of: Optional[datetime] = None,
-) -> List[Any]:
+    changes: list[Any],
+    as_of: datetime | None = None,
+) -> list[Any]:
     """Material developments in chronological order, up to `as_of`.
 
     Uses observation time so a late-published investigation appears when the
@@ -134,7 +135,7 @@ def development_timeline(
     ordered = sorted(
         changes,
         key=lambda c: getattr(c, "occurred_at", datetime.min.replace(
-            tzinfo=timezone.utc)),
+            tzinfo=UTC)),
     )
     if as_of is None:
         return ordered
@@ -145,21 +146,21 @@ def development_timeline(
 
 def _utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
+        return value.replace(tzinfo=UTC)
     return value
 
 
 def snapshot_consistency_check(
-    snapshot_manifest: Dict[str, List[str]],
-    records_as_of: Dict[str, List[str]],
-) -> List[str]:
+    snapshot_manifest: dict[str, list[str]],
+    records_as_of: dict[str, list[str]],
+) -> list[str]:
     """Verify a snapshot's manifest matches what was knowable at its time.
 
     §5.9: a snapshot generated on Thursday must not falsely imply the system
     knew a Monday report... on Monday. This checks the manifest against the
     set of records actually observable at the snapshot's time.
     """
-    problems: List[str] = []
+    problems: list[str] = []
     for record_type, ids in snapshot_manifest.items():
         allowed = set(records_as_of.get(record_type, []))
         unexpected = [i for i in ids if i not in allowed]
