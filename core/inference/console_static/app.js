@@ -70,6 +70,17 @@ const field = {
   particles: [],
 };
 
+/* ── auth helper ──────────────────────────────────────────────────────
+   The console generates a random token at startup and injects it into the
+   page as window.CONSOLE_TOKEN. All mutating requests must send it via the
+   X-Console-Token header. GET requests (health, segments, settings, feeds
+   list) are exempt so the page can load. */
+function authHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  if (window.CONSOLE_TOKEN) h["X-Console-Token"] = window.CONSOLE_TOKEN;
+  return h;
+}
+
 /* ── station UI ────────────────────────────────────────────────────── */
 
 function setStationUI(running) {
@@ -612,7 +623,7 @@ async function broadcastDemo() {
   try {
     const res = await fetch("/api/broadcast", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(topics),
     });
     if (res.status === 409) { runState.textContent = "already running"; demoBtn.disabled = false; }
@@ -634,7 +645,7 @@ async function goLive() {
   try {
     const res = await fetch("/api/broadcast/auto", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ cycles: 1 }),
     });
     if (res.status === 409) { runState.textContent = "already running"; liveBtn.disabled = false; demoBtn.disabled = false; }
@@ -650,8 +661,8 @@ liveBtn.addEventListener("click", goLive);
 async function toggleStation() {
   const url = stationRunning ? "/api/station/stop" : "/api/station/start";
   const opts = stationRunning
-    ? { method: "POST" }
-    : { method: "POST", headers: { "Content-Type": "application/json" } };
+    ? { method: "POST", headers: authHeaders() }
+    : { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }) };
   if (!stationRunning) opts.body = JSON.stringify({ poll_seconds: 30, world: true });
   try {
     const res = await fetch(url, opts);
@@ -798,7 +809,7 @@ async function saveSettings() {
   try {
     const res = await fetch("/api/settings", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         poll_seconds: Number(setPoll.value),
         use_world_feeds: setWorld.checked,
@@ -858,7 +869,7 @@ function feedRow(f) {
     try {
       const res = await fetch(`/api/feeds/${f.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ enabled: toggle.checked }),
       });
       if (!res.ok) { toggle.checked = !toggle.checked; setFeedsMsg("could not update feed", "bad"); return; }
@@ -919,7 +930,7 @@ async function editFeed(f) {
   try {
     const res = await fetch(`/api/feeds/${f.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ name: newName, endpoint: newUrl }),
     });
     if (!res.ok) {
@@ -937,7 +948,10 @@ async function editFeed(f) {
 async function removeFeed(f) {
   if (!window.confirm(`Remove "${f.name}"?`)) return;
   try {
-    const res = await fetch(`/api/feeds/${f.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/feeds/${f.id}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
     if (!res.ok) {
       const detail = await res.json().catch(() => ({}));
       setFeedsMsg(detail.detail || "could not remove feed", "bad");
@@ -957,7 +971,7 @@ feedAddBtn.addEventListener("click", async () => {
   try {
     const res = await fetch("/api/feeds", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ name: feedName.value.trim(), endpoint: url }),
     });
     const data = await res.json().catch(() => ({}));

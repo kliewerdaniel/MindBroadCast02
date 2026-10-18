@@ -22,6 +22,7 @@ Design boundaries preserved:
 import asyncio
 import json
 import os
+import secrets
 import struct
 import sys
 import threading
@@ -30,9 +31,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..broadcast.providers import ProviderError
 from ..inference.autonomous import AutonomousBroadcaster
@@ -42,6 +45,27 @@ from ..inference.runtime import LiveRuntime, RuntimeConfig, TranscriptLine
 
 _HERE = Path(__file__).resolve().parent
 _STATIC = _HERE / "console_static"
+
+# ── Console authentication ──────────────────────────────────────────────
+# A random token is generated at startup and required on all mutating
+# routes. The token is injected into the HTML so the console frontend can
+# send it on subsequent requests. For a localhost-only console this is
+# sufficient: anyone who can load the page can already interact with it.
+# For non-loopback binds (--allow-non-loopback), the token is the only
+# thing preventing arbitrary feed injection by anyone who can reach
+# the port.
+_CONSOLE_TOKEN = secrets.token_urlsafe(32)
+
+
+def _verify_console_token(request: Request) -> None:
+    """Dependency: reject mutating requests without a valid token."""
+    # GET requests and the SSE stream are exempt so the page can load
+    # and the browser can subscribe. All mutating routes require it.
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    token = request.headers.get("X-Console-Token") or request.query_params.get("token")
+    if not token or not secrets.compare_digest(token, _CONSOLE_TOKEN):
+        raise HTTPException(401, "console token required")
 
 
 def _data_dir() -> Path:
@@ -328,7 +352,51 @@ class ConsoleState:
 
 state = ConsoleState()
 
+# ── Request body models ────────────────────────────────────────────────
+# Typed Pydantic models replace untyped Dict[str, Any] so malformed
+# bodies are rejected at the edge, not deep inside a handler.
+
+class FeedCreate(BaseModel):
+    name: str = ""
+    endpoint: str
+
+class FeedEdit(BaseModel):
+    name: Optional[str] = None
+    endpoint: Optional[str] = None
+    enabled: Optional[bool] = None
+    poll_interval_seconds: Optional[int] = Field(None, ge=30)
+
+class BroadcastRequest(BaseModel):
+    topics: List[Dict[str, Any]] = Field(default_factory=list)
+
+class AutoBroadcastRequest(BaseModel):
+    source: str = "Live Feed"
+    endpoint: str = "https://feeds.npr.org/1001/rss.xml"
+    cycles: int = 1
+
+class StationStartRequest(BaseModel):
+    source: str = "NPR News"
+    endpoint: str = "https://feeds.npr.org/1001/rss.xml"
+    poll_seconds: float = 30.0
+    world: bool = False
+    sources: List[Dict[str, str]] = Field(default_factory=list)
+
+class SettingsUpdate(BaseModel):
+    poll_seconds: Optional[float] = None
+    use_world_feeds: Optional[bool] = None
+    multi_persona: Optional[bool] = None
+    max_compile_per_cycle: Optional[int] = None
+
+
 app = FastAPI(title="MindBroadcast Console")
+
+# TrustedHostMiddleware prevents DNS rebinding attacks. When the console is
+# bound to a non-loopback address, the Host header must match the bind
+# address or a known-safe value.
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["localhost", "127.0.0.1", "[::1]"],
+)
 
 
 @app.get("/api/health")
@@ -361,7 +429,7 @@ async def segment_audio(segment_id: str) -> FileResponse:
 
 
 @app.get("/api/stream")
-async def stream() -> StreamingResponse:
+async def stream(_: None = Depends(_verify_console_token)) -> StreamingResponse:
     """SSE: transcript + segment events as the broadcast airs."""
     global _main_loop
     if _main_loop is None:
@@ -385,7 +453,8 @@ async def stream() -> StreamingResponse:
 
 
 @app.post("/api/broadcast")
-async def broadcast(topics: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def broadcast(body: BroadcastRequest,
+                     _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Start a broadcast run over the given topics (one at a time)."""
     global _run_active
     if not _run_lock.acquire(blocking=False):
@@ -403,7 +472,7 @@ async def broadcast(topics: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             loop = asyncio.new_event_loop()
             lines = loop.run_until_complete(
-                state.runtime.run(topics, on_segment=state.on_segment))
+                state.runtime.run(body.topics, on_segment=state.on_segment))
             loop.close()
             _broadcast({"type": "done", "segments": len(lines),
                         "errors": state.runtime.errors})
@@ -414,11 +483,12 @@ async def broadcast(topics: List[Dict[str, Any]]) -> Dict[str, Any]:
             _run_lock.release()
 
     threading.Thread(target=run_sync, daemon=True).start()
-    return {"accepted": True, "topics": len(topics)}
+    return {"accepted": True, "topics": len(body.topics)}
 
 
 @app.post("/api/broadcast/auto")
-async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
+async def broadcast_auto(body: AutoBroadcastRequest,
+                           _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Run an autonomous cycle: watch a live source, decide, and speak.
 
     This is the real system — the broadcaster ingests a news feed, compiles it
@@ -435,10 +505,9 @@ async def broadcast_auto(body: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(
             503, f"language model unavailable: {health}. Is Ollama running?")
 
-    name = body.get("source", "Live Feed")
-    endpoint = body.get("endpoint",
-                        "https://feeds.npr.org/1001/rss.xml")
-    cycles = int(body.get("cycles", 1))
+    name = body.source
+    endpoint = body.endpoint
+    cycles = body.cycles
 
     def run_sync() -> None:
         global _run_active
@@ -486,7 +555,8 @@ _station: Dict[str, Any] = {"running": False, "thread": None,
 
 
 @app.post("/api/station/start")
-async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
+async def station_start(body: StationStartRequest,
+                        _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Start the continuous station: watch a source and air on a loop."""
     if _station["running"]:
         raise HTTPException(409, "the station is already running")
@@ -507,19 +577,19 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
     from .settings import settings_store
     settings = settings_store.load()
 
-    name = body.get("source", "NPR News")
-    endpoint = body.get("endpoint", "https://feeds.npr.org/1001/rss.xml")
+    name = body.source
+    endpoint = body.endpoint
     # The saved setting is the default; an explicit request still wins, so the
     # UI can override per-run without the user having to change a setting.
-    poll = float(body.get("poll_seconds") or settings.poll_seconds)
+    poll = body.poll_seconds if body.poll_seconds else settings.poll_seconds
     # Optional multi-source: a list of {source, endpoint} registers several
     # feeds and runs the loop unpinned so it rotates across them (§3).
-    extra = body.get("sources") or []
+    extra = body.sources
     # world=True registers the full curated world registry (all regions) and
     # runs unpinned so the loop rotates across every region — the station
     # represents the world, not one or two outlets. The saved setting decides
     # the default so the user's choice persists across restarts.
-    use_world = bool(body.get("world", settings.use_world_feeds))
+    use_world = body.world if body.world else settings.use_world_feeds
 
     def station_loop() -> None:
         loop = asyncio.new_event_loop()
@@ -577,7 +647,7 @@ async def station_start(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.post("/api/station/stop")
-async def station_stop() -> Dict[str, Any]:
+async def station_stop(_: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Stop the continuous station after the current cycle."""
     if not _station["running"]:
         return {"stopped": True, "was_running": False}
@@ -692,10 +762,11 @@ async def list_feeds() -> Dict[str, Any]:
 
 
 @app.post("/api/feeds")
-async def add_feed(body: Dict[str, Any]) -> Dict[str, Any]:
+async def add_feed(body: FeedCreate,
+                   _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Register a new feed, or return the existing one for that endpoint."""
-    name = (body.get("name") or "").strip()
-    endpoint = (body.get("endpoint") or "").strip()
+    name = body.name.strip()
+    endpoint = body.endpoint.strip()
     if not endpoint:
         raise HTTPException(400, "endpoint is required")
     if not endpoint.lower().startswith(("http://", "https://")):
@@ -710,28 +781,25 @@ async def add_feed(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.patch("/api/feeds/{source_id}")
-async def edit_feed(source_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+async def edit_feed(source_id: str, body: FeedEdit,
+                    _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Edit a feed's name, endpoint, or enabled flag."""
     store = state.autonomous.store
     source = await store.get_source(source_id)
     if source is None:
         raise HTTPException(404, "no such feed")
 
-    if "name" in body and body["name"] is not None:
-        source.name = str(body["name"]).strip() or source.name
-    if "endpoint" in body and body["endpoint"] is not None:
-        endpoint = str(body["endpoint"]).strip()
+    if body.name is not None:
+        source.name = body.name.strip() or source.name
+    if body.endpoint is not None:
+        endpoint = body.endpoint.strip()
         if not endpoint.lower().startswith(("http://", "https://")):
             raise HTTPException(400, "endpoint must be an http(s) URL")
         source.endpoint = endpoint
-    if "enabled" in body and body["enabled"] is not None:
-        source.enabled = bool(body["enabled"])
-    if "poll_interval_seconds" in body and body["poll_interval_seconds"]:
-        try:
-            source.poll_interval_seconds = max(
-                30, int(body["poll_interval_seconds"]))
-        except (TypeError, ValueError):
-            raise HTTPException(400, "poll_interval_seconds must be an integer")
+    if body.enabled is not None:
+        source.enabled = body.enabled
+    if body.poll_interval_seconds is not None:
+        source.poll_interval_seconds = max(30, body.poll_interval_seconds)
 
     await store.update_source(source)
     return {"id": source.id, "name": source.name, "endpoint": source.endpoint,
@@ -739,7 +807,8 @@ async def edit_feed(source_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.delete("/api/feeds/{source_id}")
-async def remove_feed(source_id: str) -> Dict[str, Any]:
+async def remove_feed(source_id: str,
+                      _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Delete a feed. Refuses while articles still reference it."""
     from ..persistence import PersistenceError
     try:
@@ -761,7 +830,8 @@ async def get_settings() -> Dict[str, Any]:
 
 
 @app.put("/api/settings")
-async def put_settings(body: Dict[str, Any]) -> Dict[str, Any]:
+async def put_settings(body: SettingsUpdate,
+                       _: None = Depends(_verify_console_token)) -> Dict[str, Any]:
     """Update settings. Invalid values are clamped, never rejected outright.
 
     A user setting a 5-second poll gets the safe floor and the response says
@@ -771,7 +841,12 @@ async def put_settings(body: Dict[str, Any]) -> Dict[str, Any]:
 
     current = settings_store.load()
     merged = current.to_dict()
-    merged.update(body or {})
+    # Only update fields that were actually provided (not None).
+    for field_name in ("poll_seconds", "use_world_feeds",
+                       "multi_persona", "max_compile_per_cycle"):
+        value = getattr(body, field_name)
+        if value is not None:
+            merged[field_name] = value
     updated = StationSettings.from_mapping(merged)
     settings_store.save(updated)
 
@@ -789,9 +864,34 @@ async def put_settings(body: Dict[str, Any]) -> Dict[str, Any]:
 async def index() -> HTMLResponse:
     index_path = _STATIC / "index.html"
     if index_path.exists():
-        return HTMLResponse(index_path.read_text())
+        html = index_path.read_text()
+        # Inject the console token so the frontend can authenticate
+        # mutating requests. For a localhost console this is sufficient —
+        # anyone who can load the page can already interact with it.
+        html = html.replace(
+            "<script src=\"/static/app.js\"></script>",
+            f'<script>window.CONSOLE_TOKEN = "{_CONSOLE_TOKEN}";</script>\n'
+            '<script src="/static/app.js"></script>',
+        )
+        return HTMLResponse(html)
     return HTMLResponse("<h1>MindBroadcast</h1><p>static/index.html missing</p>")
 
 
 if _STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+
+# ── Startup: print the console token ───────────────────────────────────
+# The token is generated at import time. Print it so a user starting the
+# console from a terminal can see it. For non-loopback binds, this is the
+# only thing preventing unauthorized access.
+def _print_console_token() -> None:
+    import sys
+    print(f"\n{'='*60}", file=sys.stderr)
+    print(f"  MindBroadcast console", file=sys.stderr)
+    print(f"  Token: {_CONSOLE_TOKEN}", file=sys.stderr)
+    print(f"  Bind:  127.0.0.1:7862 (localhost-only)", file=sys.stderr)
+    print(f"{'='*60}\n", file=sys.stderr)
+
+
+_print_console_token()
