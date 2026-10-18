@@ -31,27 +31,38 @@ docs disagree, the spec wins; raise it as a decision in DECISIONS.md.
 | 7 | [EDITORIAL_MODEL.md](EDITORIAL_MODEL.md) | Ranking factors, novelty, coverage debt/saturation, interruptions, explainability. |
 | 8 | [TESTING_STRATEGY.md](TESTING_STRATEGY.md) | Test layers, evaluation corpora, failure injection, acceptance gates. |
 | 9 | [ROADMAP.md](ROADMAP.md) | Phases 0–9, dependency order, exit criteria, gates. |
-| 10 | [PHASE_0_AUDIT.md](PHASE_0_AUDIT.md) | Current-state audit against the prior implementation, with a reproduced test baseline. |
-| 11 | [PHASE_1_PLAN.md](PHASE_1_PLAN.md) | Task-by-task plan for persistence and domain integrity — the first build phase. |
-| 12 | [ACCEPTANCE_CRITERIA.md](ACCEPTANCE_CRITERIA.md) | Definition of Done and Gates 1–10. |
-| 13 | [DECISIONS.md](DECISIONS.md) | ADR log. Ratify before code, per ADR-gated engineering. |
-| 15 | [DECISIONS_PHASE1.md](DECISIONS_PHASE1.md) | ADRs 11–14: decisions taken during Phase 1 implementation. |
-| 16 | [DECISIONS_PHASE2.md](DECISIONS_PHASE2.md) | ADRs 15–19: decisions taken during Phase 2 implementation. |
-| 17 | [DECISIONS_PHASE3.md](DECISIONS_PHASE3.md) | ADRs 20–25: decisions taken during Phase 3 implementation. |
-| 18 | [PHASE_3_PLAN.md](PHASE_3_PLAN.md) | Knowledge Compiler plan. **Executed.** |
-| 19 | [DECISIONS_PHASE4.md](DECISIONS_PHASE4.md) | ADRs 26–30: decisions taken during Phase 4 implementation. |
-| 20 | [PHASE_4_PLAN.md](PHASE_4_PLAN.md) | World model and story intelligence plan. **Executed.** |
-| 21 | [DECISIONS_PHASE5.md](DECISIONS_PHASE5.md) | ADRs 31–36: decisions taken during Phase 5 implementation. |
-| 22 | [PHASE_5_PLAN.md](PHASE_5_PLAN.md) | Single-persona broadcasting plan. **Executed.** |
-| 23 | [DECISIONS_PHASE6.md](DECISIONS_PHASE6.md) | ADRs 37–42: decisions taken during Phase 6 implementation. |
-| 24 | [PHASE_6_PLAN.md](PHASE_6_PLAN.md) | Multi-persona dialogue plan. **Executed.** |
-| 25 | [DECISIONS_PHASE7.md](DECISIONS_PHASE7.md) | ADRs 43–49: decisions taken during Phase 7 implementation. |
-| 26 | [PHASE_7_PLAN.md](PHASE_7_PLAN.md) | Live audience and operator plan. **Executed.** |
-| 27 | [DECISIONS_PHASE8.md](DECISIONS_PHASE8.md) | ADRs 50–56: decisions taken during Phase 8 implementation. |
-| 28 | [PHASE_8_PLAN.md](PHASE_8_PLAN.md) | Reliability and streaming plan. **Executed.** |
-| 17 | [PHASE_2_PLAN.md](PHASE_2_PLAN.md) | Ingestion and source normalization plan. **Executed.** |
-| 14 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
-| 15 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
+| 10 | [ACCEPTANCE_CRITERIA.md](ACCEPTANCE_CRITERIA.md) | Definition of Done and Gates 1–10. |
+| 11 | [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) | Spec section → doc → phase → status. |
+| 12 | [DECISIONS.md](DECISIONS.md) | ADR log. Ratify before code, per ADR-gated engineering. |
+| 13 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved decisions and their recommended defaults. |
+| 14 | [DEPLOYMENT.md](DEPLOYMENT.md) | How to run the station on each OS. |
+| 15 | [RELEASE.md](RELEASE.md) | Release pipeline and artifact walkthrough. |
+
+### Archive
+
+Executed phase plans and per-phase ADRs are in
+[`docs/archive/`](archive/). They are historical records of decisions
+taken during implementation, not live reference:
+
+| Doc | Contents |
+|---|---|
+| [archive/PHASE_0_AUDIT.md](archive/PHASE_0_AUDIT.md) | Current-state audit against the prior implementation. |
+| [archive/PHASE_1_PLAN.md](archive/PHASE_1_PLAN.md) | Persistence and domain integrity plan. |
+| [archive/PHASE_2_PLAN.md](archive/PHASE_2_PLAN.md) | Ingestion and source normalization plan. |
+| [archive/PHASE_3_PLAN.md](archive/PHASE_3_PLAN.md) | Knowledge compiler plan. |
+| [archive/PHASE_4_PLAN.md](archive/PHASE_4_PLAN.md) | World model and story intelligence plan. |
+| [archive/PHASE_5_PLAN.md](archive/PHASE_5_PLAN.md) | Single-persona broadcasting plan. |
+| [archive/PHASE_6_PLAN.md](archive/PHASE_6_PLAN.md) | Multi-persona dialogue plan. |
+| [archive/PHASE_7_PLAN.md](archive/PHASE_7_PLAN.md) | Live audience and operator plan. |
+| [archive/PHASE_8_PLAN.md](archive/PHASE_8_PLAN.md) | Reliability and streaming plan. |
+| [archive/DECISIONS_PHASE1.md](archive/DECISIONS_PHASE1.md) | ADRs 11–14: Phase 1 decisions. |
+| [archive/DECISIONS_PHASE2.md](archive/DECISIONS_PHASE2.md) | ADRs 15–19: Phase 2 decisions. |
+| [archive/DECISIONS_PHASE3.md](archive/DECISIONS_PHASE3.md) | ADRs 20–25: Phase 3 decisions. |
+| [archive/DECISIONS_PHASE4.md](archive/DECISIONS_PHASE4.md) | ADRs 26–30: Phase 4 decisions. |
+| [archive/DECISIONS_PHASE5.md](archive/DECISIONS_PHASE5.md) | ADRs 31–36: Phase 5 decisions. |
+| [archive/DECISIONS_PHASE6.md](archive/DECISIONS_PHASE6.md) | ADRs 37–42: Phase 6 decisions. |
+| [archive/DECISIONS_PHASE7.md](archive/DECISIONS_PHASE7.md) | ADRs 43–49: Phase 7 decisions. |
+| [archive/DECISIONS_PHASE8.md](archive/DECISIONS_PHASE8.md) | ADRs 50–56: Phase 8 decisions. |
 
 ## Status legend
 
