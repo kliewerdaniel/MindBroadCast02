@@ -42,7 +42,7 @@ numpy>=1.24.0
 # PyInstaller build worked locally and failed in CI with
 # "Hidden import 'uvicorn.logging' not found".
 fastapi>=0.110.0
-uvicorn>=0.29.0
+uvicorn>=0.54.0
 
 # ── desktop app ──────────────────────────────────────────────────────
 # pywebview renders the window; on macOS it needs the PyObjC Cocoa/WebKit
