@@ -106,11 +106,11 @@ def _start_tts() -> subprocess.Popen:
     instead of starting a server. There we run the server in a thread instead
     (see ``_serve_in_thread``).
     """
-    with open(_ROOT / "data" / "tts.log", "w") as log:
-        return subprocess.Popen(
-            [sys.executable, "-m", "core.inference.tts_server",
-             "--port", str(_TTS_PORT)],
-            cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
+    log = open(_ROOT / "data" / "tts.log", "w")  # noqa: SIM115
+    return subprocess.Popen(
+        [sys.executable, "-m", "core.inference.tts_server",
+         "--port", str(_TTS_PORT)],
+        cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
 def _interpreter_with_mlx() -> str | None:
@@ -185,8 +185,8 @@ def _start_tts_external(interpreter: str) -> subprocess.Popen:
     dir, and puts it on PYTHONPATH as well, so the module is importable even
     if the working directory is ignored.
     """
-    with open(_ROOT / "data" / "tts.log", "w") as log:
-        cwd = _project_root_for(interpreter) or str(_ROOT)
+    log = open(_ROOT / "data" / "tts.log", "w")  # noqa: SIM115
+    cwd = _project_root_for(interpreter) or str(_ROOT)
     env = dict(os.environ)
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = cwd + (os.pathsep + existing if existing else "")
@@ -198,11 +198,11 @@ def _start_tts_external(interpreter: str) -> subprocess.Popen:
 
 def _start_console() -> subprocess.Popen:
     """Start the console with uvicorn, quiet (the window IS the output)."""
-    with open(_ROOT / "data" / "console.log", "w") as log:
-        return subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "core.inference.console:app",
-             "--host", "127.0.0.1", "--port", str(_CONSOLE_PORT)],
-            cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
+    log = open(_ROOT / "data" / "console.log", "w")  # noqa: SIM115
+    return subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "core.inference.console:app",
+         "--host", "127.0.0.1", "--port", str(_CONSOLE_PORT)],
+        cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
 
 
 def _serve_in_thread(target, *args, **kwargs) -> None:
